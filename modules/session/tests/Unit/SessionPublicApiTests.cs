@@ -1,6 +1,8 @@
 using Lumio.Client.Connection;
 using Lumio.Client.Session;
 using Lumio.Client.Session.Tests.Support;
+using Lumio.GameRuntime.Ecs;
+using Lumio.GameRuntime.Samples.Username.Components.Chat;
 
 namespace Lumio.Client.Session.Tests.Unit;
 
@@ -58,5 +60,14 @@ public sealed class SessionPublicApiTests
         Assert.True(harness.Session.GetSnapshot().RuntimeCommitted);
         Assert.False(harness.Session.GetSnapshot().BaselineAckSent);
         Assert.False(harness.Connections.Loopback.TryReceiveFromClient(out _));
+
+        Assert.True(harness.Session.TryGetReplicaWorld(out var world));
+        world.Manager.World.Self.Get<ChatComponent>().SendMessage("hello-runtime");
+        world.Manager.Tick();
+        harness.Tick();
+
+        Assert.True(harness.Connections.Loopback.TryReceiveFromClient(out EncodedFrame outbound));
+        InputCommandMessage decoded = WireCodec.DecodeInput(outbound.Bytes.Span);
+        Assert.Equal(WireCodec.ChatInput, decoded.MappingId);
     }
 }

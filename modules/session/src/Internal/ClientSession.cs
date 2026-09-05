@@ -532,7 +532,7 @@ namespace Lumio.Client.Session
                     continue;
                 }
 
-                _connection.TrySend(new EncodedFrame(input.Payload));
+                _connection.TrySend(new EncodedFrame(WireCodec.EncodeInput(input)));
             }
         }
 
