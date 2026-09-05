@@ -3,6 +3,18 @@ namespace Lumio.Client.Session.Tests.Unit;
 public sealed class SessionMessageGateTests
 {
     [Fact]
+    public void ConnectionSupersededIsAcceptedDuringNegotiation()
+    {
+        var gate = new ActiveMessageGate();
+
+        Assert.True(gate.Allow(
+            ClientSessionState.Negotiating,
+            eventGeneration: 1,
+            sessionGeneration: 1,
+            SessionMessageKind.ConnectionSuperseded));
+    }
+
+    [Fact]
     public void InvalidMatrix_HasZeroLeafCalls()
     {
         var gate = new ActiveMessageGate();

@@ -25,11 +25,19 @@ namespace Lumio.Client.Session
                 return false;
             }
 
+            if (kind == SessionMessageKind.ConnectionSuperseded
+                && (state == ClientSessionState.Negotiating
+                    || state == ClientSessionState.Synchronizing
+                    || state == ClientSessionState.Resyncing
+                    || state == ClientSessionState.Active))
+            {
+                return true;
+            }
+
             if (state == ClientSessionState.Synchronizing || state == ClientSessionState.Resyncing)
             {
                 return kind == SessionMessageKind.Welcome
                     || kind == SessionMessageKind.WorldChange
-                    || kind == SessionMessageKind.ConnectionSuperseded
                     || kind == SessionMessageKind.Error;
             }
 

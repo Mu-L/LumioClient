@@ -322,7 +322,8 @@ namespace Lumio.Client.Session
             }
 
             SessionMessageKind kind = _dependencies.Messages.Map(evt.Connection.Frame.Bytes);
-            if (_machine.State == ClientSessionState.Negotiating)
+            if (_machine.State == ClientSessionState.Negotiating
+                && kind != SessionMessageKind.ConnectionSuperseded)
             {
                 if (kind == SessionMessageKind.Welcome)
                 {
