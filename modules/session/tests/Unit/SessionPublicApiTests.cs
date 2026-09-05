@@ -52,6 +52,9 @@ public sealed class SessionPublicApiTests
         harness.Deliver(SessionTestBytes.Welcome);
         harness.Tick();
         Assert.Equal(ClientSessionState.Synchronizing, harness.Session.GetSnapshot().State);
+        Assert.True(harness.Session.TryGetReplicaWorld(out var synchronizedWorld));
+        Assert.True(synchronizedWorld.SelfLookup().Found);
+        Assert.Equal(new NetEntityId(7UL, 2UL).ToHex(), synchronizedWorld.SelfLookup().Binding.NetEntityId);
 
         harness.Deliver(SessionTestBytes.WorldChange);
         harness.Tick();

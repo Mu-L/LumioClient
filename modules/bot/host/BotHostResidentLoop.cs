@@ -136,6 +136,10 @@ internal static class BotHostResidentLoop
                     world.Manager.World.Self.Get<ChatComponent>().SendMessage(
                         "bot-" + dues[d].ToString(System.Globalization.CultureInfo.InvariantCulture));
                     world.Manager.Tick();
+                    // Yield after each bot submission so the transport observes
+                    // the deterministic account order before the next socket is
+                    // queued.
+                    await delay(cancellationToken);
                 }
 
                 // Let the transport send loop and Room owner consume this
