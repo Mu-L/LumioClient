@@ -72,6 +72,19 @@ public sealed class SessionPublicApiTests
     }
 
     [Fact]
+    public void WelcomeWithWrongConnectionGenerationIsRejectedBeforeSynchronization()
+    {
+        var harness = new SessionHarness(true);
+        harness.Connect(1UL);
+        harness.Tick();
+        harness.Deliver(WireCodec.EncodePack(new WelcomeMessage(7UL, new NetEntityId(7UL, 2UL), 2UL)));
+        harness.Tick();
+
+        Assert.Equal(ClientSessionState.Faulted, harness.Session.GetSnapshot().State);
+        Assert.False(harness.Session.GetSnapshot().RuntimeCommitted);
+    }
+
+    [Fact]
     public void OutboundObserverReceivesTypedInputAndEncodedWireBytes()
     {
         var observer = new RecordingOutboundObserver();

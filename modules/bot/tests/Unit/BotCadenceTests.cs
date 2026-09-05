@@ -184,6 +184,7 @@ public sealed class BotCadenceTests
                 JsonElement record = document.RootElement;
                 Assert.Equal("InputCommand", record.GetProperty("messageType").GetString());
                 Assert.Equal("chat.input", record.GetProperty("mappingId").GetString());
+                Assert.True(record.GetProperty("sequence").GetUInt64() > 0UL);
                 Assert.Equal(64, record.GetProperty("payloadSha256").GetString()!.Length);
             }
             Assert.Equal(new ulong[] { 5, 10, 15 }, timer.Trace.UtteranceTicks.ToArray());
@@ -236,6 +237,39 @@ public sealed class BotCadenceTests
             string expectedHash = Convert.ToHexString(SHA256.HashData(decoded.Payload.Span)).ToLowerInvariant();
             Assert.Equal(expectedHash, record.GetProperty("payloadSha256").GetString());
             Assert.DoesNotContain("wire-evidence", log, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(logPath);
+        }
+    }
+
+    [Fact]
+    public void ProductionChatEvidenceUsesRuntimeWireSequenceAndPayload()
+    {
+        IClientReplica replica = new ClientReplicaFactory().Create();
+        replica.ResetForNewSession(new ReplicaResetRequest(1));
+        Assert.True(CommitInitialWorld(replica, new NetEntityId(7UL, 2UL)));
+        IReplicaWorld world = replica.World;
+        world.Manager.World.Self.Get<ChatComponent>().SendMessage("wire-sequence");
+        world.Manager.Tick();
+        InputCommandMessage runtimeMessage = Assert.IsType<InputCommandMessage>(Assert.Single(world.DrainOutbound()));
+        byte[] encoded = WireCodec.EncodeInput(runtimeMessage);
+        var callerMessage = new InputCommandMessage(99UL, "chat.input", runtimeMessage.Sender, new byte[] { 0x01 });
+
+        string logPath = Path.Combine(Path.GetTempPath(), "lumio-bot-evidence-wire-" + Guid.NewGuid().ToString("N") + ".ndjson");
+        try
+        {
+            var evidence = new ProductionChatInputEvidence(logPath, "Bot01");
+            evidence.ExpectChatInput(5UL);
+            evidence.Observe(callerMessage, encoded);
+
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(logPath));
+            JsonElement record = document.RootElement;
+            InputCommandMessage decoded = WireCodec.DecodeInput(encoded);
+            Assert.Equal(decoded.Sequence, record.GetProperty("sequence").GetUInt64());
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(decoded.Payload.Span)).ToLowerInvariant(), record.GetProperty("payloadSha256").GetString());
+            Assert.DoesNotContain("wire-sequence", File.ReadAllText(logPath), StringComparison.Ordinal);
         }
         finally
         {

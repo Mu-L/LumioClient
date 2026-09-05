@@ -319,6 +319,14 @@ namespace Lumio.Client.Session
             {
                 if (kind == SessionMessageKind.Welcome)
                 {
+                    if (!TryValidateWelcome(evt.Connection.Frame.Bytes, evt.Generation))
+                    {
+                        _terminal.Freeze();
+                        _machine.TryEnter(ClientSessionState.Faulted);
+                        ReleaseAll();
+                        return;
+                    }
+
                     if (!TryEnterSynchronizing(new HandshakeOutcome(
                         HandshakePhase.Accepted,
                         HandshakeRejectReason.None,
@@ -409,6 +417,32 @@ namespace Lumio.Client.Session
             _ledger.Acquire("voxel");
             _machine.TryEnter(ClientSessionState.Synchronizing);
             return true;
+        }
+
+        private bool TryValidateWelcome(ReadOnlyMemory<byte> frame, ulong eventGeneration)
+        {
+            try
+            {
+                if (WireCodec.DecodePack(frame.Span) is not WelcomeMessage welcome)
+                {
+                    return false;
+                }
+
+                return welcome.InstanceId != 0UL
+                    && !welcome.Self.IsDefault
+                    && welcome.Self.InstanceId == welcome.InstanceId
+                    && welcome.ConnectionGeneration != 0UL
+                    && welcome.ConnectionGeneration == eventGeneration
+                    && welcome.ConnectionGeneration == _machine.Generation;
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
         }
 
         private void ApplyAuthority(ReadOnlyMemory<byte> update, ReplicaUpdateKind kind)

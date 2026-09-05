@@ -179,4 +179,23 @@ public sealed class ReplicaChatPresentationTests
             consumer.Replica.ObserveRuntimeOutcome(handle, ReplicaRuntimeOutcome.AbortedOutcome(), out _));
         Assert.Empty(consumer.ChatWindow);
     }
+
+    [Fact]
+    public void ChatWindowIsOwnedByPresentationConsumerRatherThanReplicaWorld()
+    {
+        ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
+        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.Replica));
+        Assert.True(GameplayWireFixtures.CommitEmptySnapshot(consumer.Replica));
+        Assert.True(GameplayWireFixtures.CommitJson(
+            consumer.Replica,
+            ReplicaUpdateKind.Delta,
+            GameplayWireFixtures.ContractChatDelta(),
+            2,
+            10,
+            0,
+            1));
+
+        Assert.Single(consumer.ChatWindow);
+        Assert.Single(consumer.World.CopyChatWindow());
+    }
 }

@@ -43,14 +43,30 @@ internal sealed class ProductionChatInputEvidence : IClientOutboundMessageObserv
 
     public void Observe(InputCommandMessage message, ReadOnlyMemory<byte> encodedBytes)
     {
-        _ = encodedBytes;
-        if (!string.Equals(message.MappingId, WireCodec.ChatInput, StringComparison.Ordinal))
+        _ = message;
+        InputCommandMessage observed;
+        try
+        {
+            // Evidence is derived from the exact bytes accepted by the session's
+            // Runtime encoder, rather than the pre-encode object supplied by a caller.
+            observed = WireCodec.DecodeInput(encodedBytes.Span);
+        }
+        catch (FormatException)
+        {
+            return;
+        }
+        catch (ArgumentException)
+        {
+            return;
+        }
+
+        if (!string.Equals(observed.MappingId, WireCodec.ChatInput, StringComparison.Ordinal))
         {
             return;
         }
 
         ulong tick = _pendingTicks.Count == 0 ? 0UL : _pendingTicks.Dequeue();
-        BotHostResidentLoop.AppendChatInputLog(_logPath, tick, _accountId, message, encodedBytes);
+        BotHostResidentLoop.AppendChatInputLog(_logPath, tick, _accountId, observed, encodedBytes);
     }
 }
 
@@ -139,7 +155,6 @@ internal static class BotHostResidentLoop
         InputCommandMessage message,
         ReadOnlyMemory<byte> encodedBytes)
     {
-        _ = encodedBytes;
         string payloadSha256 = Convert.ToHexString(SHA256.HashData(message.Payload.Span)).ToLowerInvariant();
         string line = "{\"ts\":\"" + DateTime.UtcNow.ToString("o") +
                       "\",\"kind\":\"chat.input\",\"tick\":" + tick.ToString(System.Globalization.CultureInfo.InvariantCulture) +
@@ -147,6 +162,7 @@ internal static class BotHostResidentLoop
                       Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture) +
                       ",\"accountId\":" + JsonSerializer.Serialize(accountId) +
                       ",\"messageType\":\"InputCommand\",\"mappingId\":" + JsonSerializer.Serialize(message.MappingId) +
+                      ",\"sequence\":" + message.Sequence.ToString(System.Globalization.CultureInfo.InvariantCulture) +
                       ",\"payloadSha256\":\"" + payloadSha256 + "\"}\n";
         File.AppendAllText(path, line);
     }

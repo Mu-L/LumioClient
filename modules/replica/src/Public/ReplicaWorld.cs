@@ -10,7 +10,7 @@ namespace Lumio.Client.Replica
 {
     public sealed class ReplicaWorld : IReplicaWorld
     {
-        private readonly List<ReplicaChatLine> _chat = new List<ReplicaChatLine>();
+        private IReplicaChatSink? _presentation;
         private readonly List<WorldMessage> _deferredFrames = new List<WorldMessage>();
         private readonly List<WorldMessage> _deferredQueries = new List<WorldMessage>();
         private WorldManager _manager;
@@ -209,7 +209,14 @@ namespace Lumio.Client.Replica
 
         public IReadOnlyList<ReplicaChatLine> CopyChatWindow()
         {
-            return _chat.ToArray();
+            return _presentation is ReplicaChatPresentation presentation
+                ? presentation.CopyLines()
+                : Array.Empty<ReplicaChatLine>();
+        }
+
+        internal void AttachPresentation(IReplicaChatSink presentation)
+        {
+            _presentation = presentation;
         }
 
         public IReadOnlyList<ReplicaIdentityRecord> CopyIdentityRecords()
@@ -264,7 +271,7 @@ namespace Lumio.Client.Replica
         internal void Reset(ulong generation)
         {
             RecreateManager();
-            _chat.Clear();
+            _presentation?.Reset();
             _self = default(ReplicaBinding);
             _hasSelf = false;
             _inputEnabled = false;
@@ -307,7 +314,8 @@ namespace Lumio.Client.Replica
             if (welcome.InstanceId == 0UL
                 || welcome.Self.IsDefault
                 || welcome.Self.InstanceId != welcome.InstanceId
-                || welcome.ConnectionGeneration == 0UL)
+                || welcome.ConnectionGeneration == 0UL
+                || welcome.ConnectionGeneration != _replicaGeneration)
             {
                 _lastRejectCode = GameplayReject.BadEnvelope;
                 return false;
@@ -583,7 +591,7 @@ namespace Lumio.Client.Replica
 
             if (request.Kind == ReplicaUpdateKind.FullSnapshot)
             {
-                _chat.Clear();
+                _presentation?.Reset();
                 _lastRoomSequence = 0UL;
                 _lastMessageId = 0UL;
                 _replicaGeneration = request.Generation;
@@ -607,7 +615,8 @@ namespace Lumio.Client.Replica
                     continue;
                 }
 
-                _chat.Add(new ReplicaChatLine(rpc.MessageId, rpc.RoomSequence, rpc.Sender.ToHex(), text, rpc.AppliedTick));
+                ReplicaChatLine line = new ReplicaChatLine(rpc.MessageId, rpc.RoomSequence, rpc.Sender.ToHex(), text, rpc.AppliedTick);
+                _presentation?.Append(in line);
                 _lastRoomSequence = rpc.RoomSequence;
                 _lastMessageId = rpc.MessageId;
             }
