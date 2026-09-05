@@ -88,7 +88,8 @@ public static class FoundationHostCommand
             new ClientPredictionFactory(),
             new ImmediateGameplayScopeActivator(),
             new NullPresentationSink(),
-            new FixtureMessageMap());
+            new FixtureMessageMap(),
+            new NullClientOutboundMessageObserver());
         new ClientSessionFactory().Create(in deps, out IClientSession session);
         var hook = new FoundationPeer(connections);
         var host = new HeadlessBotHost(session, new DeterministicBotDriver(), ingress, hook);
@@ -159,13 +160,13 @@ public static class FoundationHostCommand
         var bots = new List<ProductionBot>();
         foreach (string account in EnumerateAccounts(parsed.AccountFrom, parsed.AccountTo))
         {
-            bots.Add(CreateProductionBot(parsed.Server, account));
+            bots.Add(CreateProductionBot(parsed.Server, account, logPath));
         }
 
         var residents = new ResidentBot[bots.Count];
         for (int i = 0; i < bots.Count; i++)
         {
-            residents[i] = new ResidentBot(bots[i].AccountId, bots[i].Session);
+            residents[i] = new ResidentBot(bots[i].AccountId, bots[i].Session, bots[i].Evidence);
         }
 
         await BotHostResidentLoop.RunAsync(
@@ -185,7 +186,7 @@ public static class FoundationHostCommand
 #endif
     }
 
-    private static ProductionBot CreateProductionBot(string server, string account)
+    private static ProductionBot CreateProductionBot(string server, string account, string logPath)
     {
         var ingress = new InputSampleIngress(16);
         var options = new ClientEventPipelineOptions(8, 4, TimeSpan.FromSeconds(1));
@@ -200,6 +201,7 @@ public static class FoundationHostCommand
             new byte[] { 0x05, 0x06, 0x07, 0x08 },
             TimeSpan.FromSeconds(10),
             initialFrame);
+        var evidence = new ProductionChatInputEvidence(logPath, account);
         var deps = new ClientSessionDependencies(
             new WebSocketClientConnectionFactory(),
             new ClientHandshakeFactory(),
@@ -214,11 +216,12 @@ public static class FoundationHostCommand
             new ClientPredictionFactory(),
             new ImmediateGameplayScopeActivator(),
             new NullPresentationSink(),
-            new JsonSessionMessageKindMap());
+            new JsonSessionMessageKindMap(),
+            evidence);
         new ClientSessionFactory().Create(in deps, out IClientSession session);
         session.Login(new SessionConnectRequest(1, endpoint), CancellationToken.None);
         _ = account;
-        return new ProductionBot(account, session);
+        return new ProductionBot(account, session, evidence);
     }
 
     private static IEnumerable<string> EnumerateAccounts(string from, string to)
@@ -263,15 +266,18 @@ public static class FoundationHostCommand
 
     private readonly struct ProductionBot
     {
-        public ProductionBot(string accountId, IClientSession session)
+        public ProductionBot(string accountId, IClientSession session, ProductionChatInputEvidence evidence)
         {
             AccountId = accountId;
             Session = session;
+            Evidence = evidence;
         }
 
         public string AccountId { get; }
 
         public IClientSession Session { get; }
+
+        public ProductionChatInputEvidence Evidence { get; }
     }
 
     internal readonly struct HostArgs

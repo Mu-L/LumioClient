@@ -200,7 +200,8 @@ internal static class BotSessionFactory
             new ClientPredictionFactory(),
             new ImmediateGameplayScopeActivator(),
             new NullPresentationSink(),
-            new UnpublishedSessionMessageKindMap());
+            new UnpublishedSessionMessageKindMap(),
+            new NullClientOutboundMessageObserver());
         new ClientSessionFactory().Create(in deps, out var session);
         return session;
     }

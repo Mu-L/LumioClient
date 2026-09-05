@@ -10,6 +10,9 @@ using Lumio.Client.Persistence;
 using Lumio.Client.Prediction;
 using Lumio.Client.Replica;
 using Lumio.Client.Session;
+using Lumio.GameRuntime.Samples.Username.Components.Chat;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace Lumio.Client.Bot.Tests.Unit;
 
@@ -114,11 +117,17 @@ public sealed class BotCadenceTests
         var abi = new C4TickFrameAbi();
         using var timer = new ClientTimerManager(abi);
         Assert.True(timer.ScheduleBotChatCadence());
-        var session = new WorldBackedSession(world);
+        var evidence = Enumerable.Range(1, 6)
+            .Select(index => new ProductionChatInputEvidence(
+                logPath,
+                "Bot" + index.ToString("D2", System.Globalization.CultureInfo.InvariantCulture)))
+            .ToArray();
+        var session = new WorldBackedSession(world, evidence);
         ResidentBot[] residents = Enumerable.Range(1, 6)
             .Select(index => new ResidentBot(
                 "Bot" + index.ToString("D2", System.Globalization.CultureInfo.InvariantCulture),
-                session))
+                session,
+                evidence[index - 1]))
             .ToArray();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
@@ -155,14 +164,55 @@ public sealed class BotCadenceTests
             Assert.Contains("\"tickSource\":\"native-kernel/tickFrame\"", log, StringComparison.Ordinal);
             Assert.Contains("\"accountId\":\"Bot01\"", log, StringComparison.Ordinal);
             Assert.Equal(6, File.ReadAllLines(logPath).Length);
+            foreach (string line in File.ReadAllLines(logPath))
+            {
+                using JsonDocument document = JsonDocument.Parse(line);
+                JsonElement record = document.RootElement;
+                Assert.Equal("InputCommand", record.GetProperty("messageType").GetString());
+                Assert.Equal("chat.input", record.GetProperty("mappingId").GetString());
+                Assert.Equal(64, record.GetProperty("payloadSha256").GetString()!.Length);
+            }
             Assert.Equal(new ulong[] { 5, 10, 15 }, timer.Trace.UtteranceTicks.ToArray());
-            IReadOnlyList<WorldMessage> outbound = world.DrainOutbound();
-            Assert.Equal(6, outbound.Count(message => message is InputCommandMessage input
-                && string.Equals(input.MappingId, "chat.input", StringComparison.Ordinal)));
+            Assert.Equal(6, session.OutboundInputCount);
         }
         finally
         {
             Directory.Delete(logDir, true);
+        }
+    }
+
+    [Fact]
+    public void ProductionChatEvidenceHashesPayloadFromObservedWireBytes()
+    {
+        IClientReplica replica = new ClientReplicaFactory().Create();
+        replica.ResetForNewSession(new ReplicaResetRequest(1));
+        Assert.True(CommitInitialWorld(replica, new NetEntityId(7UL, 2UL)));
+        IReplicaWorld world = replica.World;
+        world.Manager.World.Self.Get<ChatComponent>().SendMessage("wire-evidence");
+        world.Manager.Tick();
+        InputCommandMessage message = Assert.IsType<InputCommandMessage>(Assert.Single(world.DrainOutbound()));
+        byte[] encoded = WireCodec.EncodeInput(message);
+        InputCommandMessage decoded = WireCodec.DecodeInput(encoded);
+
+        string logPath = Path.Combine(Path.GetTempPath(), "lumio-bot-evidence-" + Guid.NewGuid().ToString("N") + ".ndjson");
+        try
+        {
+            var evidence = new ProductionChatInputEvidence(logPath, "Bot01");
+            evidence.ExpectChatInput(5UL);
+            evidence.Observe(message, encoded);
+
+            string log = File.ReadAllText(logPath);
+            using JsonDocument document = JsonDocument.Parse(log);
+            JsonElement record = document.RootElement;
+            Assert.Equal("InputCommand", record.GetProperty("messageType").GetString());
+            Assert.Equal(WireCodec.ChatInput, record.GetProperty("mappingId").GetString());
+            string expectedHash = Convert.ToHexString(SHA256.HashData(decoded.Payload.Span)).ToLowerInvariant();
+            Assert.Equal(expectedHash, record.GetProperty("payloadSha256").GetString());
+            Assert.DoesNotContain("wire-evidence", log, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(logPath);
         }
     }
 
@@ -326,10 +376,14 @@ public sealed class BotCadenceTests
     private sealed class WorldBackedSession : IClientSession
     {
         private readonly IReplicaWorld _world;
+        private readonly ProductionChatInputEvidence[] _evidence;
 
-        public WorldBackedSession(IReplicaWorld world)
+        public int OutboundInputCount { get; private set; }
+
+        public WorldBackedSession(IReplicaWorld world, ProductionChatInputEvidence[] evidence)
         {
             _world = world;
+            _evidence = evidence;
         }
 
         public SessionCommandResult RequestConnect(in SessionConnectRequest request, CancellationToken cancellationToken)
@@ -342,6 +396,22 @@ public sealed class BotCadenceTests
         public SessionTickResult Tick(in ClientOwnerTick tick)
         {
             _ = tick;
+            IReadOnlyList<WorldMessage> outbound = _world.DrainOutbound();
+            int[] partition = { 0, 3, 1, 4, 2, 5 };
+            int target = 0;
+            for (int i = 0; i < outbound.Count; i++)
+            {
+                if (outbound[i] is not InputCommandMessage input)
+                {
+                    continue;
+                }
+
+                byte[] encoded = WireCodec.EncodeInput(input);
+                _evidence[partition[target % partition.Length]].Observe(input, encoded);
+                OutboundInputCount++;
+                target++;
+            }
+
             return new SessionTickResult(ClientSessionState.Active);
         }
 

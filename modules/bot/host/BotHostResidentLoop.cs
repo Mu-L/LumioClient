@@ -2,20 +2,56 @@ using Lumio.Client.Bot;
 using Lumio.Client.Replica;
 using Lumio.Client.Session;
 using Lumio.GameRuntime.Samples.Username.Components.Chat;
+using Lumio.GameRuntime.Ecs;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace Lumio.Client.Bot.Host;
 
 internal readonly struct ResidentBot
 {
-    public ResidentBot(string accountId, IClientSession session)
+    public ResidentBot(string accountId, IClientSession session, ProductionChatInputEvidence? evidence = null)
     {
         AccountId = accountId;
         Session = session;
+        Evidence = evidence;
     }
 
     public string AccountId { get; }
 
     public IClientSession Session { get; }
+
+    public ProductionChatInputEvidence? Evidence { get; }
+}
+
+internal sealed class ProductionChatInputEvidence : IClientOutboundMessageObserver
+{
+    private readonly string _logPath;
+    private readonly string _accountId;
+    private readonly Queue<ulong> _pendingTicks = new();
+
+    public ProductionChatInputEvidence(string logPath, string accountId)
+    {
+        _logPath = logPath ?? throw new ArgumentNullException(nameof(logPath));
+        _accountId = accountId ?? throw new ArgumentNullException(nameof(accountId));
+    }
+
+    public void ExpectChatInput(ulong tick)
+    {
+        _pendingTicks.Enqueue(tick);
+    }
+
+    public void Observe(InputCommandMessage message, ReadOnlyMemory<byte> encodedBytes)
+    {
+        _ = encodedBytes;
+        if (!string.Equals(message.MappingId, WireCodec.ChatInput, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        ulong tick = _pendingTicks.Count == 0 ? 0UL : _pendingTicks.Dequeue();
+        BotHostResidentLoop.AppendChatInputLog(_logPath, tick, _accountId, message, encodedBytes);
+    }
 }
 
 internal static class BotHostResidentLoop
@@ -75,10 +111,10 @@ internal static class BotHostResidentLoop
                         continue;
                     }
 
+                    bot.Evidence?.ExpectChatInput(dues[d]);
                     world.Manager.World.Self.Get<ChatComponent>().SendMessage(
                         "bot-" + dues[d].ToString(System.Globalization.CultureInfo.InvariantCulture));
                     world.Manager.Tick();
-                    AppendChatInputLog(logPath, dues[d], bot.AccountId);
                 }
             }
 
@@ -86,13 +122,22 @@ internal static class BotHostResidentLoop
         }
     }
 
-    public static void AppendChatInputLog(string path, ulong tick, string accountId)
+    public static void AppendChatInputLog(
+        string path,
+        ulong tick,
+        string accountId,
+        InputCommandMessage message,
+        ReadOnlyMemory<byte> encodedBytes)
     {
+        _ = encodedBytes;
+        string payloadSha256 = Convert.ToHexString(SHA256.HashData(message.Payload.Span)).ToLowerInvariant();
         string line = "{\"ts\":\"" + DateTime.UtcNow.ToString("o") +
                       "\",\"kind\":\"chat.input\",\"tick\":" + tick.ToString(System.Globalization.CultureInfo.InvariantCulture) +
                       ",\"tickSource\":\"native-kernel/tickFrame\",\"pid\":" +
                       Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture) +
-                      ",\"accountId\":\"" + accountId + "\"}\n";
+                      ",\"accountId\":" + JsonSerializer.Serialize(accountId) +
+                      ",\"messageType\":\"InputCommand\",\"mappingId\":" + JsonSerializer.Serialize(message.MappingId) +
+                      ",\"payloadSha256\":\"" + payloadSha256 + "\"}\n";
         File.AppendAllText(path, line);
     }
 }

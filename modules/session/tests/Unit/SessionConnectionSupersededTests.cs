@@ -118,7 +118,8 @@ public sealed class SessionConnectionSupersededTests
                 new ClientPredictionFactory(),
                 new ImmediateGameplayScopeActivator(),
                 new NullPresentationSink(),
-                new JsonSessionMessageKindMap());
+                new JsonSessionMessageKindMap(),
+                new NullClientOutboundMessageObserver());
             new ClientSessionFactory().Create(in deps, out IClientSession session);
             Session = session;
         }

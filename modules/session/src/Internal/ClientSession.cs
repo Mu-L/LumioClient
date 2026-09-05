@@ -532,7 +532,11 @@ namespace Lumio.Client.Session
                     continue;
                 }
 
-                _connection.TrySend(new EncodedFrame(WireCodec.EncodeInput(input)));
+                byte[] encoded = WireCodec.EncodeInput(input);
+                if (_connection.TrySend(new EncodedFrame(encoded)).Accepted)
+                {
+                    _dependencies.OutboundObserver.Observe(input, encoded);
+                }
             }
         }
 

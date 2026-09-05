@@ -46,7 +46,8 @@ internal sealed class FoundationHarness
             new ClientPredictionFactory(),
             Scope,
             Presentation,
-            new FixtureMessageMap());
+            new FixtureMessageMap(),
+            new NullClientOutboundMessageObserver());
         new ClientSessionFactory().Create(in deps, out var session);
         Session = session;
     }

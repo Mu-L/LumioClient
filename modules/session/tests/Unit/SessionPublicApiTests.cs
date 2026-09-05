@@ -70,4 +70,34 @@ public sealed class SessionPublicApiTests
         InputCommandMessage decoded = WireCodec.DecodeInput(outbound.Bytes.Span);
         Assert.Equal(WireCodec.ChatInput, decoded.MappingId);
     }
+
+    [Fact]
+    public void OutboundObserverReceivesTypedInputAndEncodedWireBytes()
+    {
+        var observer = new RecordingOutboundObserver();
+        var harness = new SessionHarness(true, observer);
+        harness.HappyPathToActive();
+
+        Assert.True(harness.Session.TryGetReplicaWorld(out var world));
+        world.Manager.World.Self.Get<ChatComponent>().SendMessage("hello-observer");
+        world.Manager.Tick();
+        harness.Tick();
+
+        var observed = Assert.Single(observer.Records);
+        InputCommandMessage decoded = WireCodec.DecodeInput(observed.EncodedBytes);
+        Assert.Equal(WireCodec.ChatInput, decoded.MappingId);
+        Assert.Equal(observed.Message.Payload.ToArray(), decoded.Payload.ToArray());
+    }
+
+    private sealed class RecordingOutboundObserver : IClientOutboundMessageObserver
+    {
+        public List<OutboundRecord> Records { get; } = new();
+
+        public void Observe(InputCommandMessage message, ReadOnlyMemory<byte> encodedBytes)
+        {
+            Records.Add(new OutboundRecord(message, encodedBytes.ToArray()));
+        }
+    }
+
+    private readonly record struct OutboundRecord(InputCommandMessage Message, byte[] EncodedBytes);
 }

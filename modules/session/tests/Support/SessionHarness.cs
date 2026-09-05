@@ -43,7 +43,17 @@ internal sealed class SessionHarness
     {
     }
 
+    public SessionHarness(bool runtimeCommitted, IClientOutboundMessageObserver outboundObserver)
+        : this(runtimeCommitted, false, outboundObserver)
+    {
+    }
+
     public SessionHarness(bool runtimeCommitted, bool indeterminate)
+        : this(runtimeCommitted, indeterminate, new NullClientOutboundMessageObserver())
+    {
+    }
+
+    private SessionHarness(bool runtimeCommitted, bool indeterminate, IClientOutboundMessageObserver outboundObserver)
     {
         Connections = new CapturingConnectionFactory();
         Scope = new ImmediateGameplayScopeActivator();
@@ -67,7 +77,8 @@ internal sealed class SessionHarness
             new ClientPredictionFactory(),
             Scope,
             Presentation,
-            new JsonSessionMessageKindMap());
+            new JsonSessionMessageKindMap(),
+            outboundObserver);
         new ClientSessionFactory().Create(in deps, out var session);
         Session = session;
     }
