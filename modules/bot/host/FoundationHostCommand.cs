@@ -198,10 +198,11 @@ public static class FoundationHostCommand
         });
         var endpoint = new ClientEndpoint(
             server,
-            new byte[] { 0x01, 0x02, 0x03, 0x04 },
-            new byte[] { 0x05, 0x06, 0x07, 0x08 },
+            ReadOnlyMemory<byte>.Empty,
+            ReadOnlyMemory<byte>.Empty,
             TimeSpan.FromSeconds(10),
-            initialFrame);
+            initialFrame,
+            requiresMvpChannelAuth: false);
         var evidence = new ProductionChatInputEvidence(logPath, account);
         var deps = new ClientSessionDependencies(
             new WebSocketClientConnectionFactory(),

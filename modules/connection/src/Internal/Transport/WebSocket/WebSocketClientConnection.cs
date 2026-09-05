@@ -251,10 +251,13 @@ namespace Lumio.Client.Connection
 
             try
             {
-                // 三段位序,顺序即契约(见 MvpChannelAuth 的退场纪律)。
-                socket.Options.AddSubProtocol(MvpChannelAuth.SubProtocol);
-                socket.Options.AddSubProtocol(MvpChannelAuth.ToBase64Url(_endpoint.Credential.Span));
-                socket.Options.AddSubProtocol(MvpChannelAuth.ToBase64Url(_endpoint.Nonce.Span));
+                if (_endpoint.RequiresMvpChannelAuth)
+                {
+                    // 三段位序,顺序即契约(见 MvpChannelAuth 的退场纪律)。
+                    socket.Options.AddSubProtocol(MvpChannelAuth.SubProtocol);
+                    socket.Options.AddSubProtocol(MvpChannelAuth.ToBase64Url(_endpoint.Credential.Span));
+                    socket.Options.AddSubProtocol(MvpChannelAuth.ToBase64Url(_endpoint.Nonce.Span));
+                }
 
                 using (var connectCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token))
                 {
@@ -262,7 +265,8 @@ namespace Lumio.Client.Connection
                     await socket.ConnectAsync(new Uri(_endpoint.Uri), connectCts.Token).ConfigureAwait(false);
                 }
 
-                if (!string.Equals(socket.SubProtocol, MvpChannelAuth.SubProtocol, StringComparison.Ordinal))
+                if (_endpoint.RequiresMvpChannelAuth
+                    && !string.Equals(socket.SubProtocol, MvpChannelAuth.SubProtocol, StringComparison.Ordinal))
                 {
                     // 协商结果不是双端约定的那个值 —— 不发任何应用数据,直接终止。
                     Terminate(ConnectionCloseReason.Fault);

@@ -95,6 +95,31 @@ public sealed class ClientEndpointValidationTests
     }
 
     [Fact]
+    public void PlainRoomProfileAllowsEmptyChannelCredentialsButKeepsEndpointValidation()
+    {
+        var endpoint = new ClientEndpoint(
+            "ws://127.0.0.1:8080/room",
+            ReadOnlyMemory<byte>.Empty,
+            ReadOnlyMemory<byte>.Empty,
+            TimeSpan.FromSeconds(5),
+            ReadOnlyMemory<byte>.Empty,
+            requiresMvpChannelAuth: false);
+
+        Assert.False(endpoint.RequiresMvpChannelAuth);
+        Assert.True(endpoint.TryValidate(out string reason), reason);
+
+        var invalid = new ClientEndpoint(
+            "http://127.0.0.1:8080/room",
+            ReadOnlyMemory<byte>.Empty,
+            ReadOnlyMemory<byte>.Empty,
+            TimeSpan.FromSeconds(5),
+            ReadOnlyMemory<byte>.Empty,
+            requiresMvpChannelAuth: false);
+        Assert.False(invalid.TryValidate(out string invalidReason));
+        Assert.Contains("scheme", invalidReason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void DefaultEndpointIsNotValid()
     {
         Assert.False(default(ClientEndpoint).TryValidate(out _));
