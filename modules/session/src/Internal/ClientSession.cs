@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using Lumio.Client.Connection;
 using Lumio.Client.Handshake;
+using Lumio.Client.Input;
 using Lumio.Client.Prediction;
 using Lumio.Client.Replica;
 using Lumio.GameRuntime.Ecs;
@@ -486,6 +487,7 @@ namespace Lumio.Client.Session
             }
 
             _superseded = true;
+            _dependencies.Commands.SetBufferPolicy(new InputBufferPolicy(InputBufferPolicyKind.Drop, _machine.Generation));
             _pendingSuperseded = new SessionSupersededNotice(
                 observed.Received,
                 observed.ReasonCode,

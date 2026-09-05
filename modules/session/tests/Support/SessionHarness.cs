@@ -137,6 +137,8 @@ internal sealed class SessionHarness
 
         public int CloseCount { get; private set; }
 
+        public bool DisconnectAfterFrameDrain { get; set; }
+
         public List<byte[]> SendAttempts { get; } = new();
 
         public void QueueSendResults(params bool[] results)
@@ -186,7 +188,33 @@ internal sealed class SessionHarness
                 return _inner.TrySend(in frame);
             }
 
-            public int DrainEvents(Span<ConnectionEvent> destination) => _inner.DrainEvents(destination);
+            public int DrainEvents(Span<ConnectionEvent> destination)
+            {
+                int count = _inner.DrainEvents(destination);
+                bool hasFrame = false;
+                for (int i = 0; i < count; i++)
+                {
+                    if (destination[i].Kind == ConnectionEventKind.FrameReceived)
+                    {
+                        hasFrame = true;
+                        break;
+                    }
+                }
+
+                if (!_owner.DisconnectAfterFrameDrain || !hasFrame)
+                {
+                    return count;
+                }
+
+                _owner.DisconnectAfterFrameDrain = false;
+                _inner.RequestClose(ConnectionCloseReason.Disconnect);
+                if (count < destination.Length)
+                {
+                    count += _inner.DrainEvents(destination.Slice(count));
+                }
+
+                return count;
+            }
 
             public ConnectionCommandResult RequestClose(ConnectionCloseReason reason)
             {

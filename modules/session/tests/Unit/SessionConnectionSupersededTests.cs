@@ -55,6 +55,35 @@ public sealed class SessionConnectionSupersededTests
     }
 
     [Fact]
+    public void CoDrainedSupersededFrameFencesDisconnectWithoutReconnect()
+    {
+        var harness = new SessionHarness(runtimeCommitted: true);
+        harness.HappyPathToActive();
+        harness.Connections.DisconnectAfterFrameDrain = true;
+        byte[] superseded = WireCodec.EncodePack(
+            new ConnectionSupersededMessage(new NetEntityId(7UL, 2UL), 2UL));
+
+        harness.Deliver(superseded);
+        harness.Tick();
+
+        ClientSessionSnapshot snapshot = harness.Session.GetSnapshot();
+        Assert.Equal(ClientSessionState.Superseded, snapshot.State);
+        Assert.Equal(1, harness.Connections.CreateCount);
+        Assert.Equal(1, harness.Connections.CloseCount);
+        Assert.Equal(1, harness.Scope.ReleaseCalls);
+        Assert.Equal(0, snapshot.LedgerCount);
+        Assert.Equal(InputBufferPolicyKind.Drop, harness.Commands.GetSnapshotPolicy().Kind);
+        Assert.Equal(snapshot.Generation, harness.Commands.GetSnapshotPolicy().Generation);
+        Assert.True(harness.Session.TryDequeueSuperseded(out SessionSupersededNotice notice));
+        Assert.Equal("connection_superseded", notice.ReasonCode);
+        Assert.False(harness.Session.TryDequeueSuperseded(out _));
+
+        harness.Session.Tick(new ClientOwnerTick(2));
+        Assert.Equal(ClientSessionState.Superseded, harness.Session.GetSnapshot().State);
+        Assert.Equal(1, harness.Connections.CreateCount);
+    }
+
+    [Fact]
     public async Task ConnectionSupersededStopsAtLoginStateAndDoesNotReconnect()
     {
         byte[] superseded = WireCodec.EncodePack(

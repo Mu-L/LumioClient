@@ -5,15 +5,16 @@ namespace Lumio.Client.Session
     internal enum SessionEventPriority
     {
         Fault = 0,
-        ForcedClose = 1,
-        Cancel = 2,
-        StableReject = 3,
-        Disconnect = 4,
-        CriticalQueueFull = 5,
-        Gap = 6,
-        Retryable = 7,
-        Success = 8,
-        Normal = 9
+        Superseded = 1,
+        ForcedClose = 2,
+        Cancel = 3,
+        StableReject = 4,
+        Disconnect = 5,
+        CriticalQueueFull = 6,
+        Gap = 7,
+        Retryable = 8,
+        Success = 9,
+        Normal = 10
     }
 
     internal readonly struct SessionEvent

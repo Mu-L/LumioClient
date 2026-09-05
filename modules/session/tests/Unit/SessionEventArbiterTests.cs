@@ -26,4 +26,12 @@ public sealed class SessionEventArbiterTests
         Assert.True(inbox.TryDequeue(out SessionEvent first));
         Assert.Equal(SessionEventPriority.Fault, first.Priority);
     }
+
+    [Fact]
+    public void SupersededBeatsCloseAndDisconnect()
+    {
+        var arbiter = new SessionEventArbiter();
+        Assert.True(arbiter.MapMessage(SessionMessageKind.ConnectionSuperseded) < arbiter.MapConnection(ConnectionEventKind.Closed));
+        Assert.True(arbiter.MapMessage(SessionMessageKind.ConnectionSuperseded) < arbiter.MapConnection(ConnectionEventKind.Disconnected));
+    }
 }
