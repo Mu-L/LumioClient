@@ -44,10 +44,14 @@ public sealed class ReplicaFullSnapshotRebuildTests
             ReplicaQueryStatus.RequestError,
             consumer.World.QueryAttribute(
                 new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "EntityIdentity.unmappedMark")).Status);
-        Assert.Equal(
-            ReplicaQueryStatus.RequestError,
-            consumer.World.QueryAttribute(
-                new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(102), "EntityIdentity.entityType")).Status);
+        ReplicaAttributeQueryResult entityType = consumer.World.QueryAttribute(
+            new ReplicaAttributeQuery(
+                "client-replica",
+                "room-01",
+                GameplayWireFixtures.RuntimeId(102),
+                "EntityIdentity.entityType"));
+        Assert.Equal(ReplicaQueryStatus.Ok, entityType.Status);
+        Assert.Equal("bot", entityType.Value);
     }
 
     [Fact]
