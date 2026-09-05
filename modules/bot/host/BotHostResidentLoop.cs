@@ -53,6 +53,12 @@ internal static class BotHostResidentLoop
                 continue;
             }
 
+            if (cadenceTick >= ClientTimerManager.BotChatCadenceTicks * 3UL)
+            {
+                await delay(cancellationToken);
+                continue;
+            }
+
             cadenceTick++;
             IReadOnlyList<ulong> dues = timer.Advance(cadenceTick);
             for (int d = 0; d < dues.Count; d++)

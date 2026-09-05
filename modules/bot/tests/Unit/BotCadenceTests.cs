@@ -109,6 +109,7 @@ public sealed class BotCadenceTests
         string logPath = Path.Combine(logDir, "bot-host.ndjson");
         string releaseFlag = Path.Combine(logDir, "release.flag");
         int owner = Environment.CurrentManagedThreadId;
+        int delayCalls = 0;
         var threadIds = new List<int>();
         var abi = new C4TickFrameAbi();
         using var timer = new ClientTimerManager(abi);
@@ -128,8 +129,8 @@ public sealed class BotCadenceTests
                     threadIds.Add(Environment.CurrentManagedThreadId);
                     await Task.Delay(5, cancellationToken);
                     threadIds.Add(Environment.CurrentManagedThreadId);
-                    if (File.Exists(logPath)
-                        && File.ReadAllText(logPath).Contains("\"kind\":\"chat.input\"", StringComparison.Ordinal))
+                    delayCalls++;
+                    if (delayCalls >= 30)
                     {
                         File.WriteAllText(releaseFlag, "1");
                     }
@@ -148,9 +149,10 @@ public sealed class BotCadenceTests
             Assert.Contains("\"kind\":\"chat.input\"", log, StringComparison.Ordinal);
             Assert.Contains("\"tickSource\":\"native-kernel/tickFrame\"", log, StringComparison.Ordinal);
             Assert.Contains("\"accountId\":\"Bot01\"", log, StringComparison.Ordinal);
+            Assert.Equal(new ulong[] { 5, 10, 15 }, timer.Trace.UtteranceTicks.ToArray());
             IReadOnlyList<WorldMessage> outbound = world.DrainOutbound();
-            Assert.Contains(outbound, message => message is InputCommandMessage input
-                && string.Equals(input.MappingId, "chat.input", StringComparison.Ordinal));
+            Assert.Equal(3, outbound.Count(message => message is InputCommandMessage input
+                && string.Equals(input.MappingId, "chat.input", StringComparison.Ordinal)));
         }
         finally
         {
