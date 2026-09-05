@@ -52,7 +52,7 @@ public sealed class GameplayEnvelopeContractTests
             .ToArray();
 
         Assert.Equal(
-            new[] { "target", "componentId", "method", "args", "messageId", "roomSequence", "sender", "appliedTick" },
+            new[] { "target", "componentId", "method", "args", "messageId", "roomSequence", "sender", "appliedTick", "scope" },
             required);
     }
 
