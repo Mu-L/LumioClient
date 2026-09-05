@@ -9,6 +9,18 @@
     <RootNamespace>Lumio.Client.Bot.Tests</RootNamespace>
     <AssemblyName>Lumio.Client.Bot.Tests</AssemblyName>
   </PropertyGroup>
+  <PropertyGroup>
+    <LumioArchRoot Condition="'$(LumioArchRoot)' == ''">$(LUMIO_ARCH_ROOT)</LumioArchRoot>
+    <LumioArchRoot Condition="'$(LumioArchRoot)' == ''">$(LUMIO_ARCHITECTURE_ROOT)</LumioArchRoot>
+    <LumioNativeLoaderCsproj Condition="'$(LumioArchRoot)' != ''">$(LumioArchRoot)/engine/managed/Lumio.Engine.NativeLoader/Lumio.Engine.NativeLoader.csproj</LumioNativeLoaderCsproj>
+    <LumioNativeLoaderInRepo>$(MSBuildThisFileDirectory)../../../LumioGameEngineArchitecture/engine/managed/Lumio.Engine.NativeLoader/Lumio.Engine.NativeLoader.csproj</LumioNativeLoaderInRepo>
+    <LumioNativeLoaderSibling>$(MSBuildThisFileDirectory)../../../../LumioGameEngineArchitecture/engine/managed/Lumio.Engine.NativeLoader/Lumio.Engine.NativeLoader.csproj</LumioNativeLoaderSibling>
+    <LumioNativeLoaderCsproj Condition="'$(LumioNativeLoaderCsproj)' == '' AND Exists('$(LumioNativeLoaderInRepo)')">$(LumioNativeLoaderInRepo)</LumioNativeLoaderCsproj>
+    <LumioNativeLoaderCsproj Condition="'$(LumioNativeLoaderCsproj)' == '' AND Exists('$(LumioNativeLoaderSibling)')">$(LumioNativeLoaderSibling)</LumioNativeLoaderCsproj>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(LumioNativeLoaderCsproj)' != '' AND Exists('$(LumioNativeLoaderCsproj)')">
+    <DefineConstants>$(DefineConstants);LUMIO_NATIVE_LOADER</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio">
@@ -18,6 +30,7 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="$(LumioNativeLoaderCsproj)" Condition="'$(LumioNativeLoaderCsproj)' != '' AND Exists('$(LumioNativeLoaderCsproj)')" />
     <ProjectReference Include="..\src\Lumio.Client.Bot.csproj" />
     <ProjectReference Include="..\host\Lumio.Client.Bot.Host.csproj" />
     <ProjectReference Include="..\..\replica\src\Lumio.Client.Replica.csproj" />
