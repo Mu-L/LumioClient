@@ -19,6 +19,20 @@ namespace Lumio.Client.Bot.Tests.Unit;
 public sealed class BotCadenceTests
 {
     [Fact]
+    public void FoundationWorldChangeFixtureUsesC1AppliedInputSequenceAndDestroyRecords()
+    {
+        WorldChangeMessage change = Assert.IsType<WorldChangeMessage>(
+            WireCodec.DecodePack(FoundationHostCommand.WorldChange));
+
+        Assert.Equal(1UL, change.Tick);
+        Assert.Equal(0UL, change.AppliedInputSequence);
+        Assert.Empty(change.Fields);
+        Assert.Empty(change.Destroys);
+        Assert.Empty(change.Rpcs);
+        Assert.Equal(2, change.Creates.Count);
+    }
+
+    [Fact]
     public void ClientTimerManagerFiresFiveTenFifteenOnTickFrameAdvance()
     {
         var abi = new C4TickFrameAbi();
@@ -278,13 +292,14 @@ public sealed class BotCadenceTests
 
         byte[] frame = WireCodec.EncodePack(new WorldChangeMessage(
             1UL,
+            0UL,
             new[]
             {
                 new CreateRecord("WorldEntity", new NetEntityId(self.InstanceId, 1UL), Array.Empty<FieldValue>()),
                 new CreateRecord("PlayerEntity", self, Array.Empty<FieldValue>()),
             },
             Array.Empty<FieldChange>(),
-            Array.Empty<NetEntityId>(),
+            Array.Empty<DestroyRecord>(),
             Array.Empty<ClientRpcRecord>()));
         var request = new ReplicaStageRequest(
             1,
