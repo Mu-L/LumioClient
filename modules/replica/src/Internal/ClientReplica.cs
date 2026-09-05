@@ -1,4 +1,5 @@
 using System;
+using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Client.Replica
 {
@@ -140,6 +141,24 @@ namespace Lumio.Client.Replica
 
         public bool TryObserveConnectionSuperseded(ReadOnlyMemory<byte> utf8, out ReplicaConnectionSuperseded notice)
         {
+            try
+            {
+                if (WireCodec.DecodePack(utf8.Span) is ConnectionSupersededMessage superseded)
+                {
+                    notice = new ReplicaConnectionSuperseded(
+                        true,
+                        "connection_superseded",
+                        superseded.NetEntityId.ToHex(),
+                        superseded.NewConnectionGeneration);
+                    _world.ObserveSuperseded(in notice);
+                    return true;
+                }
+            }
+            catch (Exception error) when (error is FormatException or ArgumentException)
+            {
+                // Gameplay C-1 uses a separate envelope; retain its decoder for that path.
+            }
+
             if (!GameplayCodec.TryDecodeConnectionSuperseded(utf8, out notice, out _))
             {
                 notice = default(ReplicaConnectionSuperseded);

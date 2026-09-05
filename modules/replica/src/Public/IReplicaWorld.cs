@@ -9,6 +9,10 @@ namespace Lumio.Client.Replica
 
         IReadOnlyList<WorldMessage> DrainOutbound();
 
+        WorldDrainResponse Drain();
+
+        IReadOnlyList<WorldMessage> DrainQueries();
+
         ReplicaAdmissionResult InstallAdmission(in ReplicaAdmission admission);
 
         ReplicaBindingLookup SelfLookup();

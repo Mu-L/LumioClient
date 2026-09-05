@@ -1,6 +1,7 @@
 using Lumio.Client.Replica;
 using Lumio.Client.Replica.Tests.Support;
 using Lumio.GameRuntime.Ecs;
+using Lumio.GameRuntime.Replication.Binding;
 using Lumio.GameRuntime.Samples.Username.Components.Identity;
 using Lumio.GameRuntime.Samples.Username.EntityTypes;
 
@@ -8,6 +9,63 @@ namespace Lumio.Client.Replica.Tests.Unit;
 
 public sealed class ReplicaWorldRuntimeTests
 {
+    [Fact]
+    public void RuntimeEncodedConnectionSupersededFrameIsDecodedByRuntimeCodec()
+    {
+        ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
+        byte[] frame = WireCodec.EncodePack(new ConnectionSupersededMessage(new NetEntityId(0UL, 1UL), 2UL));
+
+        Assert.True(consumer.Replica.TryObserveConnectionSuperseded(frame, out ReplicaConnectionSuperseded notice));
+        Assert.True(notice.Received);
+        Assert.Equal("00000000000000000000000000000001", notice.NetEntityId);
+        Assert.Equal(2UL, notice.NewConnectionGeneration);
+        Assert.False(consumer.World.InputEnabled);
+    }
+
+    [Fact]
+    public void ClientReplicaAttributeReadsUseRuntimeQueryResultsAndPreserveC1OutboundFrames()
+    {
+        ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
+        Assert.True(GameplayWireFixtures.AdmitRoom(
+            consumer.World,
+            extras: new[] { GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 1, 0) }).Accepted);
+        NetEntityId id = NetEntityId.Parse("00000000000000000000000000000065");
+        consumer.World.Manager.World.Get<IdentityComponent>(id).Name.Value = "bot-name";
+
+        ReplicaAttributeQueryResult result = consumer.World.QueryAttribute(
+            new ReplicaAttributeQuery("client-replica", "room-01", "101", "IdentityComponent.name"));
+
+        Assert.Equal(ReplicaQueryStatus.Ok, result.Status);
+        Assert.Equal("bot-name", result.Value);
+        WorldDrainResponse drained = consumer.World.Drain();
+        InputCommandMessage outbound = Assert.IsType<InputCommandMessage>(Assert.Single(drained.Frames));
+        Assert.Equal("field.write", outbound.MappingId);
+        Assert.Equal(outbound.MappingId, WireCodec.DecodeInput(WireCodec.EncodeInput(outbound), outbound.Sender).MappingId);
+        Assert.Empty(drained.Queries);
+    }
+
+    [Fact]
+    public void ReplicaWorldDrainKeepsRuntimeFramesAndInternalQueriesSeparate()
+    {
+        ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
+        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World).Accepted);
+        NetEntityId self = NetEntityId.Parse("00000000000000000000000000000001");
+        consumer.World.Manager.Enqueue(new AttributeQueryMessage(
+            "query-1",
+            "client-replica",
+            "room-01",
+            self,
+            "IdentityComponent.name"));
+        consumer.World.Manager.Tick();
+
+        WorldDrainResponse drained = consumer.World.Drain();
+
+        Assert.Empty(drained.Frames);
+        AttributeQueryResult result = Assert.IsType<AttributeQueryResult>(Assert.Single(drained.Queries));
+        Assert.Equal("query-1", result.RequestId);
+        Assert.Equal("ok", result.Outcome);
+    }
+
     [Fact]
     public void CreateRecordRunsAwakePostAttributeStart()
     {
