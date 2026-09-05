@@ -59,10 +59,8 @@ internal static class GameplayWireFixtures
 
     public static string ConnectionSupersededNotice(ulong netEntityId = 101, ulong newConnectionGeneration = 2)
     {
-        return "{\"messageType\":\"ConnectionSuperseded\",\"reasonCode\":\"connection_superseded\",\"netEntityId\":" +
-               netEntityId.ToString(System.Globalization.CultureInfo.InvariantCulture) +
-               ",\"newConnectionGeneration\":" +
-               newConnectionGeneration.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}";
+        return Encoding.UTF8.GetString(WireCodec.EncodePack(
+            new ConnectionSupersededMessage(new NetEntityId(0UL, netEntityId), newConnectionGeneration)));
     }
 
     public static (string Payload, string Sha256) EncodeIdentity(params (ulong NetEntityId, string EntityType, string UnmappedMark)[] records)

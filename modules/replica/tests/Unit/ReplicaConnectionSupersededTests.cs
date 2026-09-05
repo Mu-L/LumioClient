@@ -52,4 +52,18 @@ public sealed class ReplicaConnectionSupersededTests
         Assert.False(notice.Received);
         Assert.True(consumer.World.InputEnabled);
     }
+
+    [Fact]
+    public void DecimalConnectionSupersededIdentityFailsClosed()
+    {
+        ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
+        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World).Accepted);
+        Assert.True(GameplayWireFixtures.CommitEmptySnapshot(consumer.Replica));
+
+        byte[] utf8 = Encoding.UTF8.GetBytes(
+            "{\"messageType\":\"ConnectionSuperseded\",\"reasonCode\":\"connection_superseded\",\"netEntityId\":101,\"newConnectionGeneration\":2}");
+        Assert.False(consumer.Replica.TryObserveConnectionSuperseded(utf8, out ReplicaConnectionSuperseded notice));
+        Assert.False(notice.Received);
+        Assert.True(consumer.World.InputEnabled);
+    }
 }

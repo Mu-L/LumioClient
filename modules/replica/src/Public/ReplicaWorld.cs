@@ -361,7 +361,13 @@ namespace Lumio.Client.Replica
                 return true;
             }
 
-            if (!GameplayCodec.TryDecodeAuthority(request.Kind, request.Update, out DecodedGameplayMessage decoded, out rejectCode))
+            if (TryDecodeRuntimeWorldChange(request.Update, out _))
+            {
+                return true;
+            }
+
+            ulong instanceId = ResolveDecodeInstanceId();
+            if (!GameplayCodec.TryDecodeAuthority(request.Kind, request.Update, out DecodedGameplayMessage decoded, out rejectCode, instanceId))
             {
                 if (string.IsNullOrEmpty(rejectCode))
                 {
@@ -398,13 +404,19 @@ namespace Lumio.Client.Replica
 
         internal void ApplyCommitted(in ReplicaStageRequest request)
         {
-            if (!GameplayCodec.TryDecodeAuthority(request.Kind, request.Update, out DecodedGameplayMessage decoded, out _))
+            if (TryDecodeRuntimeWorldChange(request.Update, out WorldChangeMessage runtimeChange))
+            {
+                ApplyRuntimeCommitted(in request, runtimeChange);
+                return;
+            }
+
+            ulong instanceId = ResolveDecodeInstanceId();
+            if (!GameplayCodec.TryDecodeAuthority(request.Kind, request.Update, out DecodedGameplayMessage decoded, out _, instanceId))
             {
                 _lastRejectCode = GameplayReject.BadEnvelope;
                 return;
             }
 
-            ulong instanceId = _manager.World.InstanceId;
             var creates = new List<CreateRecord>();
             var rpcs = new List<ClientRpcRecord>();
             var chatLines = new List<ReplicaChatLine>();
@@ -432,8 +444,7 @@ namespace Lumio.Client.Replica
                     for (int r = 0; r < records.Length; r++)
                     {
                         DecodedIdentityRecord record = records[r];
-                        var id = new NetEntityId(instanceId, record.NetEntityId);
-                        creates.Add(new CreateRecord(record.EntityType, id, Array.Empty<FieldValue>()));
+                        creates.Add(new CreateRecord(record.EntityType, record.NetEntityId, Array.Empty<FieldValue>()));
                     }
                 }
 
@@ -465,7 +476,15 @@ namespace Lumio.Client.Replica
             ReadOnlySpan<ulong> tombstones = request.TombstoneEntityIds.Span;
             for (int i = 0; i < tombstones.Length; i++)
             {
-                destroys.Add(new NetEntityId(instanceId, tombstones[i]));
+                string tombstoneText = instanceId.ToString("x16", CultureInfo.InvariantCulture)
+                    + tombstones[i].ToString("x16", CultureInfo.InvariantCulture);
+                if (!NetEntityId.TryParse(tombstoneText, out NetEntityId tombstoneId) || tombstoneId.IsDefault)
+                {
+                    _lastRejectCode = GameplayReject.BadEnvelope;
+                    return;
+                }
+
+                destroys.Add(tombstoneId);
             }
 
             if (!ApplyPack(
@@ -523,6 +542,63 @@ namespace Lumio.Client.Replica
         private void EnqueueRuntimeFrame(WorldMessage message)
         {
             _manager.Enqueue(WireCodec.DecodePack(WireCodec.EncodePack(message)));
+        }
+
+        private static bool TryDecodeRuntimeWorldChange(ReadOnlyMemory<byte> update, out WorldChangeMessage change)
+        {
+            try
+            {
+                if (WireCodec.DecodePack(update.Span) is WorldChangeMessage decoded)
+                {
+                    change = decoded;
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            change = null!;
+            return false;
+        }
+
+        private void ApplyRuntimeCommitted(in ReplicaStageRequest request, WorldChangeMessage change)
+        {
+            if (request.Kind == ReplicaUpdateKind.FullSnapshot)
+            {
+                RecreateManager();
+                _chat.Clear();
+                _lastRoomSequence = 0UL;
+                _lastMessageId = 0UL;
+                _replicaGeneration = request.Generation;
+            }
+
+            if (!ApplyPack(change.Tick, new List<CreateRecord>(change.Creates), change.Fields, new List<NetEntityId>(change.Destroys), change.Rpcs))
+            {
+                _lastRejectCode = GameplayReject.BadEnvelope;
+                return;
+            }
+
+            for (int i = 0; i < change.Rpcs.Count; i++)
+            {
+                ClientRpcRecord rpc = change.Rpcs[i];
+                if (!string.Equals(rpc.ComponentId, "ChatComponent", StringComparison.Ordinal)
+                    || !string.Equals(rpc.Method, "OnChatMessage", StringComparison.Ordinal)
+                    || rpc.Args.Count == 0
+                    || rpc.Args[0] is not string text)
+                {
+                    continue;
+                }
+
+                _chat.Add(new ReplicaChatLine(rpc.MessageId, rpc.RoomSequence, rpc.Sender.ToHex(), text, rpc.AppliedTick));
+                _lastRoomSequence = rpc.RoomSequence;
+                _lastMessageId = rpc.MessageId;
+            }
+
+            if (request.Kind == ReplicaUpdateKind.FullSnapshot && !_superseded)
+            {
+                _inputEnabled = true;
+            }
         }
 
         private bool TryRuntimeAttributeQuery(
@@ -641,6 +717,18 @@ namespace Lumio.Client.Replica
             return owner is null
                 || ReferenceEquals(Thread.CurrentThread, owner)
                 || Environment.CurrentManagedThreadId == owner.ManagedThreadId;
+        }
+
+        private ulong ResolveDecodeInstanceId()
+        {
+            if (_manager.World.InstanceId != 0UL)
+            {
+                return _manager.World.InstanceId;
+            }
+
+            return _hasSelf && ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId selfId)
+                ? selfId.InstanceId
+                : 0UL;
         }
 
         private ReplicaAdmissionResult RejectAdmission(string code)

@@ -1,3 +1,4 @@
+using System.Text;
 using Lumio.Client.Replica;
 using Lumio.Client.Replica.Tests.Support;
 using Lumio.GameRuntime.Ecs;
@@ -56,6 +57,52 @@ public sealed class ReplicaWorldRuntimeTests
     }
 
     [Fact]
+    public void RuntimeWorldChangePreservesNonzeroHigh64Ids()
+    {
+        ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
+        string self = new NetEntityId(0x1122334455667788UL, 1UL).ToHex();
+        string bot = new NetEntityId(0x1122334455667788UL, 101UL).ToHex();
+        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World, selfId: self).Accepted);
+
+        byte[] frame = WireCodec.EncodePack(new WorldChangeMessage(
+            7UL,
+            new[]
+            {
+                new CreateRecord("player", NetEntityId.Parse(self), Array.Empty<FieldValue>()),
+                new CreateRecord("bot", NetEntityId.Parse(bot), Array.Empty<FieldValue>())
+            },
+            Array.Empty<FieldChange>(),
+            Array.Empty<NetEntityId>(),
+            Array.Empty<ClientRpcRecord>()));
+        ReplicaStageStatus staged = consumer.Replica.StageAuthority(
+            new ReplicaStageRequest(1UL, ReplicaUpdateKind.FullSnapshot, 10UL, 0UL, 1UL, 1UL, frame, Array.Empty<ulong>(), Array.Empty<ulong>()),
+            out ReplicaStageHandle handle,
+            out _).Status;
+
+        Assert.Equal(ReplicaStageStatus.Staged, staged);
+        Assert.Equal(
+            ReplicaOutcomeStatus.Observed,
+            consumer.Replica.ObserveRuntimeOutcome(handle, ReplicaRuntimeOutcome.CommittedOutcome(), out _));
+        Assert.Contains(consumer.World.CopyIdentityRecords(), record => record.NetEntityId == bot);
+    }
+
+    [Fact]
+    public void RuntimeWorldChangeRejectsDecimalIdentity()
+    {
+        ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
+        byte[] frame = Encoding.UTF8.GetBytes(
+            "{\"creates\":[{\"entityType\":\"bot\",\"fields\":[],\"netEntityId\":101}],\"destroys\":[],\"fields\":[],\"messageType\":\"WorldChange\",\"rpcs\":[],\"tick\":1}");
+
+        ReplicaStageStatus staged = consumer.Replica.StageAuthority(
+            new ReplicaStageRequest(1UL, ReplicaUpdateKind.FullSnapshot, 10UL, 0UL, 1UL, 1UL, frame, Array.Empty<ulong>(), Array.Empty<ulong>()),
+            out _,
+            out _).Status;
+
+        Assert.Equal(ReplicaStageStatus.Rejected, staged);
+        Assert.False(consumer.World.InputEnabled);
+    }
+
+    [Fact]
     public void ReplicaQueryRejectsMalformedIdentityWithoutLocalFallback()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
@@ -73,11 +120,11 @@ public sealed class ReplicaWorldRuntimeTests
     public void RuntimeEncodedConnectionSupersededFrameIsDecodedByRuntimeCodec()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
-        byte[] frame = WireCodec.EncodePack(new ConnectionSupersededMessage(new NetEntityId(0UL, 1UL), 2UL));
+        byte[] frame = WireCodec.EncodePack(new ConnectionSupersededMessage(new NetEntityId(0x1122334455667788UL, 1UL), 2UL));
 
         Assert.True(consumer.Replica.TryObserveConnectionSuperseded(frame, out ReplicaConnectionSuperseded notice));
         Assert.True(notice.Received);
-        Assert.Equal("00000000000000000000000000000001", notice.NetEntityId);
+        Assert.Equal("11223344556677880000000000000001", notice.NetEntityId);
         Assert.Equal(2UL, notice.NewConnectionGeneration);
         Assert.False(consumer.World.InputEnabled);
     }

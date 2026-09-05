@@ -156,17 +156,11 @@ namespace Lumio.Client.Replica
             }
             catch (Exception error) when (error is FormatException or ArgumentException)
             {
-                // Gameplay C-1 uses a separate envelope; retain its decoder for that path.
+                // Invalid or legacy envelopes fail closed.
             }
 
-            if (!GameplayCodec.TryDecodeConnectionSuperseded(utf8, out notice, out _))
-            {
-                notice = default(ReplicaConnectionSuperseded);
-                return false;
-            }
-
-            _world.ObserveSuperseded(in notice);
-            return true;
+            notice = default(ReplicaConnectionSuperseded);
+            return false;
         }
 
         public ReplicaSnapshot GetSnapshot()
