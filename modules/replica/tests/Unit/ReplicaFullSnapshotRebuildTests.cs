@@ -1,5 +1,6 @@
 using Lumio.Client.Replica;
 using Lumio.Client.Replica.Tests.Support;
+using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Client.Replica.Tests.Unit;
 
@@ -19,32 +20,22 @@ public sealed class ReplicaFullSnapshotRebuildTests
     public void FullSnapshotRebuildsEntitySetFromIdentityRecordsNotAdmissionOrEmptyBlocks()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
-        Assert.True(GameplayWireFixtures.AdmitRoom(
-            consumer.World,
-            extras: new[]
-            {
-                GameplayWireFixtures.Entity("999", "player", "room-01", 1, 1, 0),
-                GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 1, 0)
-            }).Accepted);
-        Assert.True(GameplayWireFixtures.CommitEmptySnapshot(consumer.Replica));
-        Assert.True(GameplayWireFixtures.CommitJson(
+        NetEntityId self = new(1UL, 101UL);
+        Assert.True(consumer.Replica.TryObserveWelcome(WireCodec.EncodePack(new WelcomeMessage(1UL, self, 1UL))));
+        Assert.True(CommitWorldChange(
             consumer.Replica,
-            ReplicaUpdateKind.Delta,
-            GameplayWireFixtures.ContractChatDelta(),
-            2,
-            10,
-            0,
-            1));
-        Assert.Single(consumer.ChatWindow);
-
-        Assert.True(GameplayWireFixtures.CommitJson(
-            consumer.Replica,
-            ReplicaUpdateKind.FullSnapshot,
-            GameplayWireFixtures.ContractIdentitySnapshot(),
-            3,
-            11,
-            0,
-            2));
+            1UL,
+            new WorldChangeMessage(
+                1UL,
+                new[]
+                {
+                    new CreateRecord("WorldEntity", new NetEntityId(1UL, 1UL), Array.Empty<FieldValue>()),
+                    new CreateRecord("PlayerEntity", self, Array.Empty<FieldValue>()),
+                    new CreateRecord("BotEntity", new NetEntityId(1UL, 102UL), Array.Empty<FieldValue>()),
+                },
+                Array.Empty<FieldChange>(),
+                Array.Empty<NetEntityId>(),
+                Array.Empty<ClientRpcRecord>())));
 
         IReadOnlyList<ReplicaIdentityRecord> census = consumer.World.CopyIdentityRecords();
         Assert.Equal(2, census.Count);
@@ -54,10 +45,6 @@ public sealed class ReplicaFullSnapshotRebuildTests
         Assert.Equal(2, consumer.World.VisibleEntityCount);
         Assert.Empty(consumer.ChatWindow);
         Assert.True(consumer.World.InputEnabled);
-        Assert.Equal(
-            ReplicaQueryStatus.NonExistent,
-            consumer.World.QueryAttribute(
-                new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(999), "IdentityComponent.name")).Status);
         Assert.Equal(
             string.Empty,
             consumer.World.QueryAttribute(
@@ -76,17 +63,9 @@ public sealed class ReplicaFullSnapshotRebuildTests
     public void FullSnapshotOnNewGenerationDropsOldGenerationEntities()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Bot);
-        Assert.True(GameplayWireFixtures.AdmitRoom(
-            consumer.World,
-            extras: new[] { GameplayWireFixtures.Entity("101", "player", "room-01", 1, 1, 0) }).Accepted);
-        Assert.True(GameplayWireFixtures.CommitJson(
-            consumer.Replica,
-            ReplicaUpdateKind.FullSnapshot,
-            GameplayWireFixtures.ContractIdentitySnapshot(),
-            1,
-            10,
-            0,
-            1));
+        NetEntityId firstSelf = new(1UL, 2UL);
+        Assert.True(consumer.Replica.TryObserveWelcome(WireCodec.EncodePack(new WelcomeMessage(1UL, firstSelf, 1UL))));
+        Assert.True(CommitWorldChange(consumer.Replica, 1UL, InitialChange(firstSelf, new NetEntityId(1UL, 3UL))));
         Assert.Equal(2, consumer.World.CopyIdentityRecords().Count);
 
         Assert.True(consumer.Replica.ResetForNewSession(new ReplicaResetRequest(2)).Succeeded);
@@ -94,20 +73,13 @@ public sealed class ReplicaFullSnapshotRebuildTests
         Assert.False(consumer.World.SelfLookup().Found);
         Assert.False(consumer.World.InputEnabled);
 
-        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World, "101", "player").Accepted);
-        Assert.True(GameplayWireFixtures.CommitJson(
-            consumer.Replica,
-            ReplicaUpdateKind.FullSnapshot,
-            GameplayWireFixtures.ContractIdentitySnapshot(),
-            1,
-            20,
-            0,
-            1,
-            2));
+        NetEntityId secondSelf = new(1UL, 101UL);
+        Assert.True(consumer.Replica.TryObserveWelcome(WireCodec.EncodePack(new WelcomeMessage(1UL, secondSelf, 2UL))));
+        Assert.True(CommitWorldChange(consumer.Replica, 2UL, InitialChange(secondSelf, new NetEntityId(1UL, 102UL))));
 
         Assert.Equal(2, consumer.World.CopyIdentityRecords().Count);
         Assert.Equal(
-            ReplicaQueryStatus.Ok,
+            ReplicaQueryStatus.StaleGeneration,
             consumer.World.QueryAttribute(
                 new ReplicaAttributeQuery(
                     "client-replica",
@@ -170,13 +142,56 @@ public sealed class ReplicaFullSnapshotRebuildTests
     public void EmptyStateBlocksAreZeroLiveCensusNotAPlaceholder()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
-        Assert.True(GameplayWireFixtures.AdmitRoom(
-            consumer.World,
-            extras: new[] { GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 1, 0) }).Accepted);
-        Assert.True(GameplayWireFixtures.CommitEmptySnapshot(consumer.Replica));
+        NetEntityId self = new(1UL, 2UL);
+        Assert.True(consumer.Replica.TryObserveWelcome(WireCodec.EncodePack(new WelcomeMessage(1UL, self, 1UL))));
+        Assert.True(CommitWorldChange(
+            consumer.Replica,
+            1UL,
+            new WorldChangeMessage(
+                1UL,
+                new[] { new CreateRecord("WorldEntity", new NetEntityId(1UL, 1UL), Array.Empty<FieldValue>()) },
+                Array.Empty<FieldChange>(),
+                Array.Empty<NetEntityId>(),
+                Array.Empty<ClientRpcRecord>())));
         Assert.Empty(consumer.World.CopyIdentityRecords());
         Assert.Equal(0, consumer.World.VisibleEntityCount);
         Assert.True(consumer.World.SelfLookup().Found);
         Assert.True(consumer.World.InputEnabled);
+    }
+
+    private static WorldChangeMessage InitialChange(NetEntityId self, NetEntityId other)
+        => new(
+            1UL,
+            new[]
+            {
+                new CreateRecord("WorldEntity", new NetEntityId(self.InstanceId, 1UL), Array.Empty<FieldValue>()),
+                new CreateRecord("PlayerEntity", self, Array.Empty<FieldValue>()),
+                new CreateRecord("BotEntity", other, Array.Empty<FieldValue>()),
+            },
+            Array.Empty<FieldChange>(),
+            Array.Empty<NetEntityId>(),
+            Array.Empty<ClientRpcRecord>());
+
+    private static bool CommitWorldChange(IClientReplica replica, ulong generation, WorldChangeMessage change)
+    {
+        var request = new ReplicaStageRequest(
+            generation,
+            ReplicaUpdateKind.FullSnapshot,
+            0UL,
+            0UL,
+            1UL,
+            1UL,
+            WireCodec.EncodePack(change),
+            Array.Empty<ulong>(),
+            Array.Empty<ulong>());
+        if (replica.StageAuthority(in request, out ReplicaStageHandle handle, out _).Status != ReplicaStageStatus.Staged)
+        {
+            return false;
+        }
+
+        return replica.ObserveRuntimeOutcome(
+            handle,
+            ReplicaRuntimeOutcome.CommittedOutcome(),
+            out _) == ReplicaOutcomeStatus.Observed;
     }
 }

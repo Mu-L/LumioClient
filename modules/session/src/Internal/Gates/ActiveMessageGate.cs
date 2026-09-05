@@ -22,17 +22,19 @@ namespace Lumio.Client.Session
 
             if (state == ClientSessionState.Synchronizing || state == ClientSessionState.Resyncing)
             {
-                return kind == SessionMessageKind.FullSnapshot
-                    || kind == SessionMessageKind.ConnectionSuperseded;
+                return kind == SessionMessageKind.Welcome
+                    || kind == SessionMessageKind.WorldChange
+                    || kind == SessionMessageKind.ConnectionSuperseded
+                    || kind == SessionMessageKind.Error;
             }
 
             if (state == ClientSessionState.Active)
             {
-                return kind == SessionMessageKind.Delta
+                return kind == SessionMessageKind.WorldChange
                     || kind == SessionMessageKind.Gap
                     || kind == SessionMessageKind.AuthorityUpdate
-                    || kind == SessionMessageKind.FullSnapshot
-                    || kind == SessionMessageKind.ConnectionSuperseded;
+                    || kind == SessionMessageKind.ConnectionSuperseded
+                    || kind == SessionMessageKind.Error;
             }
 
             RejectedCalls++;

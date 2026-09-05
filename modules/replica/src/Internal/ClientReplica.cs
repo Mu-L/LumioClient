@@ -139,6 +139,19 @@ namespace Lumio.Client.Replica
             return new ReplicaResetResult(true);
         }
 
+        public bool TryObserveWelcome(ReadOnlyMemory<byte> utf8)
+        {
+            try
+            {
+                return WireCodec.DecodePack(utf8.Span) is WelcomeMessage welcome
+                    && _world.ObserveWelcome(welcome);
+            }
+            catch (Exception error) when (error is FormatException or ArgumentException)
+            {
+                return false;
+            }
+        }
+
         public bool TryObserveConnectionSuperseded(ReadOnlyMemory<byte> utf8, out ReplicaConnectionSuperseded notice)
         {
             try

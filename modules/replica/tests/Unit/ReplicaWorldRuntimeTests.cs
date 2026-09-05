@@ -136,7 +136,7 @@ public sealed class ReplicaWorldRuntimeTests
         Assert.True(GameplayWireFixtures.AdmitRoom(
             consumer.World,
             extras: new[] { GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 1, 0) }).Accepted);
-        NetEntityId id = NetEntityId.Parse("00000000000000000000000000000065");
+        NetEntityId id = NetEntityId.Parse("00000000000000010000000000000065");
         consumer.World.Manager.World.Get<IdentityComponent>(id).Name.Value = "bot-name";
 
         ReplicaAttributeQueryResult result = consumer.World.QueryAttribute(
@@ -156,7 +156,7 @@ public sealed class ReplicaWorldRuntimeTests
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
         Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World).Accepted);
-        NetEntityId self = NetEntityId.Parse("00000000000000000000000000000001");
+        NetEntityId self = NetEntityId.Parse("00000000000000010000000000000001");
         consumer.World.Manager.Enqueue(new AttributeQueryMessage(
             "query-1",
             "client-replica",

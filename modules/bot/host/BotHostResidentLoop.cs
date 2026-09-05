@@ -28,16 +28,33 @@ internal static class BotHostResidentLoop
         Func<CancellationToken, Task> delay,
         CancellationToken cancellationToken)
     {
-        ulong tick = 0;
+        ulong ownerFrame = 0;
+        ulong cadenceTick = 0;
         while (!cancellationToken.IsCancellationRequested && !File.Exists(releaseFlag))
         {
-            tick++;
+            ownerFrame++;
             for (int i = 0; i < bots.Count; i++)
             {
-                bots[i].Session.Tick(new ClientOwnerTick(tick));
+                bots[i].Session.Tick(new ClientOwnerTick(ownerFrame));
             }
 
-            IReadOnlyList<ulong> dues = timer.Advance(tick);
+            bool allReady = bots.Count > 0;
+            for (int i = 0; i < bots.Count; i++)
+            {
+                if (!bots[i].Session.TryGetReplicaWorld(out IReplicaWorld world) || !world.InputEnabled)
+                {
+                    allReady = false;
+                    break;
+                }
+            }
+            if (!allReady)
+            {
+                await delay(cancellationToken);
+                continue;
+            }
+
+            cadenceTick++;
+            IReadOnlyList<ulong> dues = timer.Advance(cadenceTick);
             for (int d = 0; d < dues.Count; d++)
             {
                 for (int i = 0; i < bots.Count; i++)

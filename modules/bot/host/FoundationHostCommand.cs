@@ -7,6 +7,8 @@ using Lumio.Client.Persistence;
 using Lumio.Client.Prediction;
 using Lumio.Client.Replica;
 using Lumio.Client.Session;
+using Lumio.GameRuntime.Ecs;
+using System.Text.Json;
 #if LUMIO_ENGINE_SDK
 using Lumio.Engine.SDK;
 #endif
@@ -19,7 +21,20 @@ public static class FoundationHostCommand
 
     public static readonly byte[] Hello = { 0xA5, 0x3C, 0x91, 0x07, 0xD2, 0x4E, 0xB8, 0x11 };
 
-    public static readonly byte[] Snapshot = ReplicaC1Frames.EmptyFullSnapshot;
+    private static readonly NetEntityId FixtureSelf = new(7UL, 2UL);
+
+    public static readonly byte[] Welcome = WireCodec.EncodePack(new WelcomeMessage(7UL, FixtureSelf, 1UL));
+
+    public static readonly byte[] WorldChange = WireCodec.EncodePack(new WorldChangeMessage(
+        1UL,
+        new[]
+        {
+            new CreateRecord("WorldEntity", new NetEntityId(7UL, 1UL), Array.Empty<FieldValue>()),
+            new CreateRecord("PlayerEntity", FixtureSelf, Array.Empty<FieldValue>()),
+        },
+        Array.Empty<FieldChange>(),
+        Array.Empty<NetEntityId>(),
+        Array.Empty<ClientRpcRecord>()));
 
     public static readonly byte[] Gap = { 0x91, 0xA9, 0xB0, 0xC3 };
 
@@ -77,7 +92,8 @@ public static class FoundationHostCommand
         new ClientSessionFactory().Create(in deps, out IClientSession session);
         var hook = new FoundationPeer(connections);
         var host = new HeadlessBotHost(session, new DeterministicBotDriver(), ingress, hook);
-        int code = await host.RunAsync(new BotRunRequest(5, 0), cancellationToken);
+        int code = await Task.FromResult(BotHostOwnerPump.Run(
+            () => host.RunAsync(new BotRunRequest(5, 0), cancellationToken)));
         ClientSessionSnapshot snap = session.GetSnapshot();
         if (snap.State == ClientSessionState.Faulted)
         {
@@ -173,11 +189,16 @@ public static class FoundationHostCommand
         var ingress = new InputSampleIngress(16);
         var options = new ClientEventPipelineOptions(8, 4, TimeSpan.FromSeconds(1));
         new ClientEventPipelineFactory().Create(in options, new InMemoryClientEventSink(8), out var writer);
+        byte[] initialFrame = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            connectionId = "c-" + account.ToLowerInvariant(),
+        });
         var endpoint = new ClientEndpoint(
             server,
             new byte[] { 0x01, 0x02, 0x03, 0x04 },
             new byte[] { 0x05, 0x06, 0x07, 0x08 },
-            TimeSpan.FromSeconds(10));
+            TimeSpan.FromSeconds(10),
+            initialFrame);
         var deps = new ClientSessionDependencies(
             new WebSocketClientConnectionFactory(),
             new ClientHandshakeFactory(),
@@ -395,15 +416,19 @@ public static class FoundationHostCommand
             }
             else if (tick == 1)
             {
-                _connections.Loopback.TryDeliverToClient(new EncodedFrame(Snapshot));
+                _connections.Loopback.TryDeliverToClient(new EncodedFrame(Welcome));
             }
             else if (tick == 2)
             {
-                _connections.Loopback.TryDeliverToClient(new EncodedFrame(Gap));
+                _connections.Loopback.TryDeliverToClient(new EncodedFrame(WorldChange));
             }
             else if (tick == 3)
             {
-                _connections.Loopback.TryDeliverToClient(new EncodedFrame(Snapshot));
+                _connections.Loopback.TryDeliverToClient(new EncodedFrame(Gap));
+            }
+            else if (tick == 4)
+            {
+                _connections.Loopback.TryDeliverToClient(new EncodedFrame(WorldChange));
             }
         }
     }
@@ -437,9 +462,14 @@ public static class FoundationHostCommand
     {
         public SessionMessageKind Map(ReadOnlyMemory<byte> frame)
         {
-            if (frame.Span.SequenceEqual(Snapshot))
+            if (frame.Span.SequenceEqual(Welcome))
             {
-                return SessionMessageKind.FullSnapshot;
+                return SessionMessageKind.Welcome;
+            }
+
+            if (frame.Span.SequenceEqual(WorldChange))
+            {
+                return SessionMessageKind.WorldChange;
             }
 
             if (frame.Span.SequenceEqual(Gap))

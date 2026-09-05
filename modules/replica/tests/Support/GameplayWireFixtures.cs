@@ -8,7 +8,7 @@ namespace Lumio.Client.Replica.Tests.Support;
 
 internal static class GameplayWireFixtures
 {
-    public static string RuntimeId(ulong counter) => new NetEntityId(0UL, counter).ToHex();
+    public static string RuntimeId(ulong counter) => new NetEntityId(1UL, counter).ToHex();
 
     public static string RuntimeId(string value)
     {
@@ -20,8 +20,8 @@ internal static class GameplayWireFixtures
         return ulong.TryParse(value, out ulong counter) ? RuntimeId(counter) : value;
     }
 
-    public const string ChatEventPayload = "01000000000000000100000000000000000000000000000065000000000000000200000067670700000000000000";
-    public const string ChatEventSha256 = "019c19137fdcc3eadf322f67067c254ef33fc2f81a7123bc89253d9a41d0d179";
+    public const string ChatEventPayload = "01000000000000000100000000000000010000000000000065000000000000000200000067670700000000000000";
+    public const string ChatEventSha256 = "28a636f76f14a079bc1813e954b709737d416e0354da4f826fffd50651717066";
     public const string ChatInputPayload = "020000006767";
     public const string ChatInputSha256 = "5dbd584f1718b8bcd0dab4abeea83169f4a990defab81a8316ed845798d92dab";
     public const string ChatComponentPayload = "0200000067670700000000000000";
@@ -60,7 +60,7 @@ internal static class GameplayWireFixtures
     public static string ConnectionSupersededNotice(ulong netEntityId = 101, ulong newConnectionGeneration = 2)
     {
         return Encoding.UTF8.GetString(WireCodec.EncodePack(
-            new ConnectionSupersededMessage(new NetEntityId(0UL, netEntityId), newConnectionGeneration)));
+            new ConnectionSupersededMessage(new NetEntityId(1UL, netEntityId), newConnectionGeneration)));
     }
 
     public static (string Payload, string Sha256) EncodeIdentity(params (ulong NetEntityId, string EntityType, string UnmappedMark)[] records)
@@ -147,7 +147,7 @@ internal static class GameplayWireFixtures
         int offset = 0;
         WriteU64(bytes, ref offset, messageId);
         WriteU64(bytes, ref offset, roomSequence);
-        WriteU64(bytes, ref offset, 0UL);
+        WriteU64(bytes, ref offset, 1UL);
         WriteU64(bytes, ref offset, senderNetEntityId);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), (uint)utf8.Length);
         offset += 4;

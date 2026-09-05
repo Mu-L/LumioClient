@@ -12,6 +12,7 @@ using Lumio.Client.Prediction;
 using Lumio.Client.Replica;
 using Lumio.Client.Session;
 using Lumio.Client.Session.Tests.Support;
+using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Client.Session.Tests.Unit;
 
@@ -28,8 +29,8 @@ public sealed class SessionConnectionSupersededTests
         harness.HappyPathToActive();
         Assert.Equal(ClientSessionState.Active, harness.Session.GetSnapshot().State);
         ulong generation = harness.Session.GetSnapshot().Generation;
-        byte[] superseded = Encoding.UTF8.GetBytes(
-            "{\"messageType\":\"ConnectionSuperseded\",\"reasonCode\":\"connection_superseded\",\"netEntityId\":101,\"newConnectionGeneration\":2}");
+        byte[] superseded = WireCodec.EncodePack(
+            new ConnectionSupersededMessage(new NetEntityId(7UL, 2UL), 2UL));
         harness.Deliver(superseded);
         harness.Tick();
         Assert.Equal(ClientSessionState.Superseded, harness.Session.GetSnapshot().State);
@@ -47,12 +48,13 @@ public sealed class SessionConnectionSupersededTests
     [Fact]
     public async Task ConnectionSupersededStopsAtLoginStateAndDoesNotReconnect()
     {
-        byte[] superseded = Encoding.UTF8.GetBytes(
-            "{\"messageType\":\"ConnectionSuperseded\",\"reasonCode\":\"connection_superseded\",\"netEntityId\":101,\"newConnectionGeneration\":2}");
+        byte[] superseded = WireCodec.EncodePack(
+            new ConnectionSupersededMessage(new NetEntityId(7UL, 2UL), 2UL));
         await using var server = LoopbackSessionServer.Start(new[]
         {
             Hello,
-            ReplicaC1Frames.EmptyFullSnapshot,
+            SessionTestBytes.Welcome,
+            SessionTestBytes.WorldChange,
             superseded
         });
 
@@ -71,7 +73,7 @@ public sealed class SessionConnectionSupersededTests
             }
 
             harness.Session.Tick(new ClientOwnerTick(1));
-            await Task.Delay(20, TestContext.Current.CancellationToken);
+            Thread.Sleep(20);
         }
 
         ClientSessionSnapshot snap = harness.Session.GetSnapshot();

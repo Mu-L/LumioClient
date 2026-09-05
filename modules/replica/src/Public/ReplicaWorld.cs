@@ -157,6 +157,8 @@ namespace Lumio.Client.Replica
             _hasSelf = true;
             _hasClaim = admission.HasClaim;
             _lastRejectCode = string.Empty;
+            _manager.Enqueue(new WelcomeMessage(selfId.InstanceId, selfId, self.ConnectionGeneration));
+            _manager.Tick();
             if (!ApplyPack(0UL, creates, Array.Empty<FieldChange>(), destroys, Array.Empty<ClientRpcRecord>()))
             {
                 return RejectAdmission("runtime_failure");
@@ -353,6 +355,32 @@ namespace Lumio.Client.Replica
             _lastSuperseded = notice;
         }
 
+        internal bool ObserveWelcome(WelcomeMessage welcome)
+        {
+            if (welcome.InstanceId == 0UL
+                || welcome.Self.IsDefault
+                || welcome.Self.InstanceId != welcome.InstanceId
+                || welcome.ConnectionGeneration == 0UL)
+            {
+                _lastRejectCode = GameplayReject.BadEnvelope;
+                return false;
+            }
+
+            _manager.Enqueue(welcome);
+            _manager.Tick();
+            _self = new ReplicaBinding(
+                string.Empty,
+                string.Empty,
+                welcome.Self.ToHex(),
+                string.Empty,
+                welcome.ConnectionGeneration);
+            _hasSelf = true;
+            _superseded = false;
+            _inputEnabled = false;
+            _lastRejectCode = string.Empty;
+            return true;
+        }
+
         internal bool TryValidateAuthority(in ReplicaStageRequest request, out string rejectCode)
         {
             rejectCode = string.Empty;
@@ -363,7 +391,14 @@ namespace Lumio.Client.Replica
 
             if (TryDecodeRuntimeWorldChange(request.Update, out _))
             {
-                return true;
+                if (_hasSelf)
+                {
+                    return true;
+                }
+
+                rejectCode = GameplayReject.BadEnvelope;
+                _lastRejectCode = rejectCode;
+                return false;
             }
 
             ulong instanceId = ResolveDecodeInstanceId();
@@ -422,7 +457,6 @@ namespace Lumio.Client.Replica
             var chatLines = new List<ReplicaChatLine>();
             if (request.Kind == ReplicaUpdateKind.FullSnapshot)
             {
-                RecreateManager();
                 if (!ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId selfId))
                 {
                     _lastRejectCode = GameplayReject.BadEnvelope;
@@ -515,11 +549,7 @@ namespace Lumio.Client.Replica
             List<NetEntityId> destroys,
             IReadOnlyList<ClientRpcRecord> rpcs)
         {
-            if (_hasSelf && ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId selfId))
-            {
-                EnqueueRuntimeFrame(new WelcomeMessage(selfId.InstanceId, selfId, _self.ConnectionGeneration, "self"));
-            }
-            else
+            if (!_hasSelf)
             {
                 return false;
             }
@@ -566,7 +596,6 @@ namespace Lumio.Client.Replica
         {
             if (request.Kind == ReplicaUpdateKind.FullSnapshot)
             {
-                RecreateManager();
                 _chat.Clear();
                 _lastRoomSequence = 0UL;
                 _lastMessageId = 0UL;

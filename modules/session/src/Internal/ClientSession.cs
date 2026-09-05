@@ -308,40 +308,40 @@ namespace Lumio.Client.Session
                 return;
             }
 
+            SessionMessageKind kind = _dependencies.Messages.Map(evt.Connection.Frame.Bytes);
             if (_machine.State == ClientSessionState.Negotiating)
             {
-                HandshakeOutcome outcome = _handshakeOrch.HandleOpaqueFrame(evt.Connection.Frame.Bytes);
-                if (outcome.Accepted)
+                if (kind == SessionMessageKind.Welcome)
                 {
-                    if (_firstConnect.TryEnterSynchronizing(
-                        outcome,
-                        _config,
-                        _activation,
-                        _dependencies.Scope,
-                        _scopeGate,
-                        _handles,
-                        _machine.Generation))
-                    {
-                        _ledger.Acquire("scope");
-                        _ledger.Acquire("ecs");
-                        _ledger.Acquire("voxel");
-                        _machine.TryEnter(ClientSessionState.Synchronizing);
-                    }
-                    else
+                    if (!TryEnterSynchronizing(new HandshakeOutcome(
+                        HandshakePhase.Accepted,
+                        HandshakeRejectReason.None,
+                        true)))
                     {
                         _machine.TryEnter(ClientSessionState.Faulted);
+                        return;
                     }
                 }
-                else if (outcome.Phase == HandshakePhase.Rejected)
+                else
                 {
-                    _machine.TryEnter(ClientSessionState.Closed);
-                    ReleaseAll();
-                }
+                    HandshakeOutcome outcome = _handshakeOrch.HandleOpaqueFrame(evt.Connection.Frame.Bytes);
+                    if (outcome.Accepted)
+                    {
+                        if (!TryEnterSynchronizing(outcome))
+                        {
+                            _machine.TryEnter(ClientSessionState.Faulted);
+                        }
+                    }
+                    else if (outcome.Phase == HandshakePhase.Rejected)
+                    {
+                        _machine.TryEnter(ClientSessionState.Closed);
+                        ReleaseAll();
+                    }
 
-                return;
+                    return;
+                }
             }
 
-            SessionMessageKind kind = _dependencies.Messages.Map(evt.Connection.Frame.Bytes);
             if (kind == SessionMessageKind.Gap && _machine.State == ClientSessionState.Active)
             {
                 _resync.Enter(_dependencies.Commands, _machine.Generation);
@@ -360,10 +360,49 @@ namespace Lumio.Client.Session
                 return;
             }
 
-            if (kind == SessionMessageKind.FullSnapshot || kind == SessionMessageKind.Delta || kind == SessionMessageKind.AuthorityUpdate)
+            if (kind == SessionMessageKind.Welcome)
             {
-                ApplyAuthority(evt.Connection.Frame.Bytes, kind == SessionMessageKind.FullSnapshot ? ReplicaUpdateKind.FullSnapshot : ReplicaUpdateKind.Delta);
+                if (_replica == null || !_replica.TryObserveWelcome(evt.Connection.Frame.Bytes))
+                {
+                    _machine.TryEnter(ClientSessionState.Faulted);
+                }
+                return;
             }
+
+            if (kind == SessionMessageKind.Error)
+            {
+                _machine.TryEnter(ClientSessionState.Faulted);
+                return;
+            }
+
+            if (kind == SessionMessageKind.WorldChange || kind == SessionMessageKind.AuthorityUpdate)
+            {
+                ReplicaUpdateKind updateKind = _machine.State == ClientSessionState.Active
+                    ? ReplicaUpdateKind.Delta
+                    : ReplicaUpdateKind.FullSnapshot;
+                ApplyAuthority(evt.Connection.Frame.Bytes, updateKind);
+            }
+        }
+
+        private bool TryEnterSynchronizing(HandshakeOutcome outcome)
+        {
+            if (!_firstConnect.TryEnterSynchronizing(
+                outcome,
+                _config,
+                _activation,
+                _dependencies.Scope,
+                _scopeGate,
+                _handles,
+                _machine.Generation))
+            {
+                return false;
+            }
+
+            _ledger.Acquire("scope");
+            _ledger.Acquire("ecs");
+            _ledger.Acquire("voxel");
+            _machine.TryEnter(ClientSessionState.Synchronizing);
+            return true;
         }
 
         private void ApplyAuthority(ReadOnlyMemory<byte> update, ReplicaUpdateKind kind)

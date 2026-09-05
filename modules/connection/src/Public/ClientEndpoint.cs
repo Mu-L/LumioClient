@@ -13,11 +13,22 @@ namespace Lumio.Client.Connection
         private static readonly char[] UriTailMarkers = { '?', '#' };
 
         public ClientEndpoint(string uri, ReadOnlyMemory<byte> credential, ReadOnlyMemory<byte> nonce, TimeSpan connectTimeout)
+            : this(uri, credential, nonce, connectTimeout, ReadOnlyMemory<byte>.Empty)
+        {
+        }
+
+        public ClientEndpoint(
+            string uri,
+            ReadOnlyMemory<byte> credential,
+            ReadOnlyMemory<byte> nonce,
+            TimeSpan connectTimeout,
+            ReadOnlyMemory<byte> initialFrame)
         {
             Uri = uri ?? string.Empty;
             Credential = credential;
             Nonce = nonce;
             ConnectTimeout = connectTimeout;
+            InitialFrame = initialFrame;
         }
 
         public string Uri { get; }
@@ -27,6 +38,8 @@ namespace Lumio.Client.Connection
         public ReadOnlyMemory<byte> Nonce { get; }
 
         public TimeSpan ConnectTimeout { get; }
+
+        public ReadOnlyMemory<byte> InitialFrame { get; }
 
         /// <summary>LocalEmbedded 路径不带 endpoint;调用方据此区分环回与远程。</summary>
         public bool IsConfigured

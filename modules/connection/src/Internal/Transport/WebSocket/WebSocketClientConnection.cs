@@ -269,6 +269,16 @@ namespace Lumio.Client.Connection
                     return;
                 }
 
+                if (!_endpoint.InitialFrame.IsEmpty)
+                {
+                    byte[] initial = _endpoint.InitialFrame.ToArray();
+                    await socket.SendAsync(
+                        new ArraySegment<byte>(initial),
+                        WebSocketMessageType.Text,
+                        true,
+                        _shutdown.Token).ConfigureAwait(false);
+                }
+
                 lock (_gate)
                 {
                     _negotiatedSubProtocol = socket.SubProtocol;

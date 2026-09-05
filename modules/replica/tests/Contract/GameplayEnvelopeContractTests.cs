@@ -14,15 +14,12 @@ public sealed class GameplayEnvelopeContractTests
         Assert.NotEqual("lumio.hello-wire.v1", root.GetProperty("contractId").GetString());
         Assert.Equal("utf8-json-text-frame", root.GetProperty("transport").GetProperty("encoding").GetString());
         Assert.True(root.GetProperty("mappings").TryGetProperty("chat.input", out _));
-        Assert.True(root.GetProperty("mappings").TryGetProperty("chat.event", out _));
-        Assert.True(root.GetProperty("mappings").TryGetProperty("chat.component", out _));
-        Assert.Equal("event", root.GetProperty("mappings").GetProperty("chat.event").GetProperty("kind").GetString());
-        Assert.Equal("delta-live-only", root.GetProperty("mappings").GetProperty("chat.event").GetProperty("delivery").GetString());
-        string persistence = root.GetProperty("mappings").GetProperty("chat.component").GetProperty("dimensions").GetProperty("persistence").GetString()!;
-        Assert.True(
-            string.Equals(persistence, "persist-only", StringComparison.Ordinal)
-            || string.Equals(persistence, "persistent", StringComparison.Ordinal),
-            persistence);
+        Assert.True(root.GetProperty("mappings").TryGetProperty("field.write", out _));
+        Assert.False(root.GetProperty("mappings").TryGetProperty("chat.event", out _));
+        Assert.False(root.GetProperty("mappings").TryGetProperty("chat.component", out _));
+        Assert.Equal(
+            new[] { "Welcome", "WorldChange", "InputCommand", "ConnectionSuperseded", "Error" },
+            root.GetProperty("messages").EnumerateObject().Select(property => property.Name).ToArray());
         Assert.Contains("chat_text_too_long", root.GetProperty("errorCodes").EnumerateArray().Select(e => e.GetString()));
         Assert.Equal(512, root.GetProperty("boundedInput").GetProperty("rules").GetProperty("chatTextMaxUtf8Bytes").GetInt32());
     }
@@ -31,42 +28,32 @@ public sealed class GameplayEnvelopeContractTests
     public void FrozenC1HashExampleMatchesLocalLumioBinV1Encoder()
     {
         using JsonDocument document = LoadGameplay();
-        (string payload, string sha) = GameplayWireFixtures.EncodeChatEvent(1, 1, 101, "gg", 7);
-        Assert.Equal(GameplayWireFixtures.ChatEventPayload, payload);
-        Assert.Equal(GameplayWireFixtures.ChatEventSha256, sha);
+        string payload = GameplayWireFixtures.ChatInputPayload;
+        string sha = GameplayWireFixtures.ChatInputSha256;
 
         JsonElement example = document.RootElement.GetProperty("hash").GetProperty("examples")
             .EnumerateArray()
-            .First(e => e.GetProperty("mappingId").GetString() == "chat.event");
-        if (!string.Equals(payload, example.GetProperty("payload").GetString(), StringComparison.Ordinal))
-        {
-            throw Xunit.Sdk.SkipException.ForSkip(
-                "located C-1 contract is not origin/main C-1′ sender split; set LUMIO_ARCHITECTURE_ROOT to architecture origin/main.");
-        }
+            .First(e => e.GetProperty("mappingId").GetString() == "chat.input");
 
+        Assert.Equal(payload, example.GetProperty("payload").GetString());
         Assert.Equal(sha, example.GetProperty("payloadSha256").GetString());
     }
 
     [Fact]
-    public void FrozenC1ChatEventFieldOrderIsStable()
+    public void FrozenC1ClientRpcRecordCarriesOrderedRuntimeIdentity()
     {
         using JsonDocument document = LoadGameplay();
-        string[] order = document.RootElement
-            .GetProperty("mappings")
-            .GetProperty("chat.event")
-            .GetProperty("fieldOrder")
-            .EnumerateArray()
-            .Select(e => e.GetString()!)
+        string[] required = document.RootElement
+            .GetProperty("sharedTypes")
+            .GetProperty("ClientRpcRecord")
+            .GetProperty("required")
+            .EnumerateObject()
+            .Select(property => property.Name)
             .ToArray();
-        if (!order.Contains("senderNetEntityIdInstanceId"))
-        {
-            throw Xunit.Sdk.SkipException.ForSkip(
-                "located C-1 contract is not origin/main C-1′ sender split; set LUMIO_ARCHITECTURE_ROOT to architecture origin/main.");
-        }
 
         Assert.Equal(
-            new[] { "messageId", "roomSequence", "senderNetEntityIdInstanceId", "senderNetEntityIdCounter", "text", "appliedTick" },
-            order);
+            new[] { "target", "componentId", "method", "args", "messageId", "roomSequence", "sender", "appliedTick" },
+            required);
     }
 
     private static JsonDocument LoadGameplay()

@@ -31,4 +31,21 @@ public sealed class SessionPublicApiTests
         Assert.NotEqual(ClientSessionState.Active, harness.Session.GetSnapshot().State);
         Assert.False(harness.Session.GetSnapshot().RuntimeCommitted);
     }
+
+    [Fact]
+    public void ServerWelcomeStartsGameplaySynchronizationWithoutALocalHello()
+    {
+        var harness = new SessionHarness(true);
+        harness.Connect();
+        harness.Tick();
+        harness.Deliver(SessionTestBytes.Welcome);
+        harness.Tick();
+        Assert.Equal(ClientSessionState.Synchronizing, harness.Session.GetSnapshot().State);
+
+        harness.Deliver(SessionTestBytes.WorldChange);
+        harness.Tick();
+
+        Assert.Equal(ClientSessionState.Active, harness.Session.GetSnapshot().State);
+        Assert.True(harness.Session.GetSnapshot().RuntimeCommitted);
+    }
 }

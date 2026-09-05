@@ -1,5 +1,5 @@
 using System;
-using System.Text;
+using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Client.Session
 {
@@ -15,60 +15,21 @@ namespace Lumio.Client.Session
                 return SessionMessageKind.Gap;
             }
 
-            if (!TryReadMessageType(span, out string messageType))
+            try
+            {
+                return WireCodec.DecodePack(span) switch
+                {
+                    WelcomeMessage => SessionMessageKind.Welcome,
+                    WorldChangeMessage => SessionMessageKind.WorldChange,
+                    ConnectionSupersededMessage => SessionMessageKind.ConnectionSuperseded,
+                    ErrorMessage => SessionMessageKind.Error,
+                    _ => SessionMessageKind.Unknown,
+                };
+            }
+            catch (Exception error) when (error is FormatException or ArgumentException)
             {
                 return SessionMessageKind.Unknown;
             }
-
-            if (string.Equals(messageType, "FullSnapshot", StringComparison.Ordinal))
-            {
-                return SessionMessageKind.FullSnapshot;
-            }
-
-            if (string.Equals(messageType, "Delta", StringComparison.Ordinal))
-            {
-                return SessionMessageKind.Delta;
-            }
-
-            if (string.Equals(messageType, "ConnectionSuperseded", StringComparison.Ordinal))
-            {
-                return SessionMessageKind.ConnectionSuperseded;
-            }
-
-            return SessionMessageKind.Unknown;
-        }
-
-        private static bool TryReadMessageType(ReadOnlySpan<byte> utf8, out string messageType)
-        {
-            messageType = string.Empty;
-            string text = Encoding.UTF8.GetString(utf8.ToArray());
-            const string marker = "\"messageType\"";
-            int at = text.IndexOf(marker, StringComparison.Ordinal);
-            if (at < 0)
-            {
-                return false;
-            }
-
-            int colon = text.IndexOf(':', at + marker.Length);
-            if (colon < 0)
-            {
-                return false;
-            }
-
-            int first = text.IndexOf('"', colon + 1);
-            if (first < 0)
-            {
-                return false;
-            }
-
-            int last = text.IndexOf('"', first + 1);
-            if (last < 0)
-            {
-                return false;
-            }
-
-            messageType = text.Substring(first + 1, last - first - 1);
-            return messageType.Length > 0;
         }
     }
 }

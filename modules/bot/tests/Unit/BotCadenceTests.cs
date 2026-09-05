@@ -70,22 +70,9 @@ public sealed class BotCadenceTests
         IClientReplica replica = new ClientReplicaFactory().Create();
         replica.ResetForNewSession(new ReplicaResetRequest(1));
         IReplicaWorld world = replica.World;
-        var admission = new ReplicaAdmission(
-            new ReplicaBinding("acct-07", "room-01", "1", "player", 1),
-            new[]
-            {
-                new ReplicaVisibleEntity("1", "player", "room-01", 1, 1, 0, Array.Empty<ReplicaAttributeValue>(), true, false)
-            });
-        Assert.True(world.InstallAdmission(in admission).Accepted);
-        Assert.True(CommitEmptySnapshot(replica));
+        var expectedSelf = new NetEntityId(7UL, 2UL);
+        Assert.True(CommitInitialWorld(replica, expectedSelf));
         NetEntityId self = world.Manager.World.Self.Id;
-        world.Manager.Enqueue(new WorldChangeMessage(
-            1UL,
-            new[] { new CreateRecord("player", self, Array.Empty<FieldValue>()) },
-            Array.Empty<FieldChange>(),
-            Array.Empty<NetEntityId>(),
-            Array.Empty<ClientRpcRecord>()));
-        world.Manager.Tick();
         Assert.True(world.InputEnabled);
         Assert.True(world.Manager.World.IsLive(self));
 
@@ -112,22 +99,9 @@ public sealed class BotCadenceTests
         IClientReplica replica = new ClientReplicaFactory().Create();
         replica.ResetForNewSession(new ReplicaResetRequest(1));
         IReplicaWorld world = replica.World;
-        var admission = new ReplicaAdmission(
-            new ReplicaBinding("acct-07", "room-01", "1", "player", 1),
-            new[]
-            {
-                new ReplicaVisibleEntity("1", "player", "room-01", 1, 1, 0, Array.Empty<ReplicaAttributeValue>(), true, false)
-            });
-        Assert.True(world.InstallAdmission(in admission).Accepted);
-        Assert.True(CommitEmptySnapshot(replica));
+        var expectedSelf = new NetEntityId(7UL, 2UL);
+        Assert.True(CommitInitialWorld(replica, expectedSelf));
         NetEntityId self = world.Manager.World.Self.Id;
-        world.Manager.Enqueue(new WorldChangeMessage(
-            1UL,
-            new[] { new CreateRecord("player", self, Array.Empty<FieldValue>()) },
-            Array.Empty<FieldChange>(),
-            Array.Empty<NetEntityId>(),
-            Array.Empty<ClientRpcRecord>()));
-        world.Manager.Tick();
         Assert.True(world.InputEnabled);
 
         string logDir = Path.Combine(Path.GetTempPath(), "lumio-bot-owner-" + Guid.NewGuid().ToString("N"));
@@ -236,8 +210,24 @@ public sealed class BotCadenceTests
         Assert.Empty(hits);
     }
 
-    private static bool CommitEmptySnapshot(IClientReplica replica)
+    private static bool CommitInitialWorld(IClientReplica replica, NetEntityId self)
     {
+        if (!replica.TryObserveWelcome(WireCodec.EncodePack(
+            new WelcomeMessage(self.InstanceId, self, 1UL))))
+        {
+            return false;
+        }
+
+        byte[] frame = WireCodec.EncodePack(new WorldChangeMessage(
+            1UL,
+            new[]
+            {
+                new CreateRecord("WorldEntity", new NetEntityId(self.InstanceId, 1UL), Array.Empty<FieldValue>()),
+                new CreateRecord("PlayerEntity", self, Array.Empty<FieldValue>()),
+            },
+            Array.Empty<FieldChange>(),
+            Array.Empty<NetEntityId>(),
+            Array.Empty<ClientRpcRecord>()));
         var request = new ReplicaStageRequest(
             1,
             ReplicaUpdateKind.FullSnapshot,
@@ -245,7 +235,7 @@ public sealed class BotCadenceTests
             0,
             0,
             1,
-            ReplicaC1Frames.EmptyFullSnapshot,
+            frame,
             Array.Empty<ulong>(),
             Array.Empty<ulong>());
         if (replica.StageAuthority(in request, out ReplicaStageHandle handle, out _).Status != ReplicaStageStatus.Staged)

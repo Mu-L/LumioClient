@@ -126,7 +126,7 @@ internal sealed class FoundationHarness
         {
             if (frame.Span.SequenceEqual(FoundationTestBytes.Snapshot))
             {
-                return SessionMessageKind.FullSnapshot;
+                return SessionMessageKind.WorldChange;
             }
 
             if (frame.Span.SequenceEqual(FoundationTestBytes.Gap))
