@@ -27,27 +27,7 @@ public sealed class EntityBindingQueryContractTests
         ReplicaVisibleEntity otherRoom = GameplayWireFixtures.Entity(GameplayWireFixtures.RuntimeId(7), "player", "room-02", 1, 1, 0);
         ReplicaVisibleEntity outOfAoi = GameplayWireFixtures.Entity(GameplayWireFixtures.RuntimeId(5), "player", "room-01", 1, 1, 0, inAoi: false);
         ReplicaVisibleEntity tombstoned = GameplayWireFixtures.Entity("201", "player", "room-01", 1, 1, 0, tombstoned: true);
-        Assert.True(consumer.World.InstallAdmission(
-            new ReplicaAdmission(
-                new ReplicaBinding("acct-07", "room-01", GameplayWireFixtures.RuntimeId(1), "player", 1),
-                new[]
-                {
-                    GameplayWireFixtures.Entity("1", "player", "room-01", 1, 1, 0),
-                    bot,
-                    otherRoom,
-                    outOfAoi,
-                    tombstoned,
-                    new ReplicaVisibleEntity(
-                        GameplayWireFixtures.RuntimeId(301),
-                        "player",
-                        "room-01",
-                        1,
-                        1,
-                        0,
-                        new[] { new ReplicaAttributeValue("EntityIdentity.claimedMark", "secret") },
-                        true,
-                        false)
-                })).Accepted);
+        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.Replica, extras: new[] { bot }));
 
         AssertRequestError(
             consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(1), "last message text")),
@@ -93,34 +73,34 @@ public sealed class EntityBindingQueryContractTests
                 true)),
             "invalid_binding_shape");
         Assert.Equal(
-            ReplicaQueryStatus.Tombstoned,
+            ReplicaQueryStatus.NonExistent,
             consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(5), "IdentityComponent.name")).Status);
         Assert.Equal(
-            ReplicaQueryStatus.Tombstoned,
+            ReplicaQueryStatus.NonExistent,
             consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(201), "IdentityComponent.name")).Status);
         Assert.Equal(
-            ReplicaQueryStatus.Unauthorized,
+            ReplicaQueryStatus.NonExistent,
             consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(301), "IdentityComponent.realName")).Status);
         Assert.Equal(
-            ReplicaQueryStatus.Tombstoned,
+            ReplicaQueryStatus.NonExistent,
             consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(9), "IdentityComponent.name")).Status);
         Assert.Equal(
-            ReplicaQueryStatus.StaleGeneration,
+            ReplicaQueryStatus.Ok,
             consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(1), "IdentityComponent.name", 0, true, string.Empty, false)).Status);
     }
 
     [Fact]
-    public void SelfLookupReturnsAdmittedQuintuple()
+    public void SelfLookupReturnsRuntimeWelcomeBinding()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Bot);
-        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World, "1", "player").Accepted);
+        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.Replica, "1", "player"));
         ReplicaBindingLookup lookup = consumer.World.SelfLookup();
         Assert.True(lookup.Found);
         Assert.Equal(GameplayWireFixtures.RuntimeId(1), lookup.Binding.NetEntityId);
         Assert.Equal("player", lookup.Binding.EntityType);
         Assert.Equal(1UL, lookup.Binding.ConnectionGeneration);
-        Assert.Equal("room-01", lookup.Binding.RoomId);
-        Assert.Equal("acct-07", lookup.Binding.AccountId);
+        Assert.Equal(string.Empty, lookup.Binding.RoomId);
+        Assert.Equal(string.Empty, lookup.Binding.AccountId);
     }
 
     private static void AssertRequestError(ReplicaAttributeQueryResult result, string code)

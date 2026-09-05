@@ -41,6 +41,11 @@ namespace Lumio.Client.Replica
                 return CompleteStage(ReplicaStageStatus.Rejected);
             }
 
+            if (!_world.TryValidateAuthority(in request, out _))
+            {
+                return CompleteStage(ReplicaStageStatus.Rejected);
+            }
+
             ReplicaGapClassification classification = _gaps.Classify(in request, _metadata, _tombstones);
             if (classification == ReplicaGapClassification.Duplicate)
             {
@@ -50,11 +55,6 @@ namespace Lumio.Client.Replica
             if (classification != ReplicaGapClassification.Accept)
             {
                 return CompleteStage(ReplicaStageStatus.RequiresResync);
-            }
-
-            if (!_world.TryValidateAuthority(in request, out _))
-            {
-                return CompleteStage(ReplicaStageStatus.Rejected);
             }
 
             ReplicaMappingContext context = new ReplicaMappingContext(
@@ -114,15 +114,30 @@ namespace Lumio.Client.Replica
                 return ReplicaOutcomeStatus.Aborted;
             }
 
+            if (!TryReadRuntimeChange(staged.Update, out WorldChangeMessage change))
+            {
+                return ReplicaOutcomeStatus.Rejected;
+            }
+
             _metadata.ApplyCommitted(in staged);
             _world.ApplyCommitted(in staged);
+
+            var terminalCounters = new System.Collections.Generic.List<ulong>();
+            for (int i = 0; i < change.Destroys.Count; i++)
+            {
+                if (change.Destroys[i].Reason == DestroyReason.Terminated)
+                {
+                    terminalCounters.Add(change.Destroys[i].NetEntityId.Counter);
+                }
+            }
+
             if (staged.Kind == ReplicaUpdateKind.FullSnapshot)
             {
-                _tombstones.Replace(staged.TombstoneEntityIds);
+                _tombstones.Replace(terminalCounters.ToArray());
             }
             else
             {
-                _tombstones.Add(staged.TombstoneEntityIds);
+                _tombstones.Add(terminalCounters.ToArray());
             }
 
             committedMetadata = _metadata.ToCommittedMetadata();
@@ -158,18 +173,12 @@ namespace Lumio.Client.Replica
             {
                 if (WireCodec.DecodePack(utf8.Span) is ConnectionSupersededMessage superseded)
                 {
-                    notice = new ReplicaConnectionSuperseded(
-                        true,
-                        "connection_superseded",
-                        superseded.NetEntityId.ToHex(),
-                        superseded.NewConnectionGeneration);
-                    _world.ObserveSuperseded(in notice);
-                    return true;
+                    return _world.ObserveSuperseded(superseded, out notice);
                 }
             }
             catch (Exception error) when (error is FormatException or ArgumentException)
             {
-                // Invalid or legacy envelopes fail closed.
+                // Invalid Runtime envelopes fail closed.
             }
 
             notice = default(ReplicaConnectionSuperseded);
@@ -189,6 +198,24 @@ namespace Lumio.Client.Replica
         {
             _lastStageStatus = status;
             return new ReplicaStageResult(status);
+        }
+
+        private static bool TryReadRuntimeChange(ReadOnlyMemory<byte> utf8, out WorldChangeMessage change)
+        {
+            try
+            {
+                if (WireCodec.DecodePack(utf8.Span) is WorldChangeMessage decoded)
+                {
+                    change = decoded;
+                    return true;
+                }
+            }
+            catch (Exception error) when (error is FormatException or ArgumentException)
+            {
+            }
+
+            change = null!;
+            return false;
         }
     }
 }

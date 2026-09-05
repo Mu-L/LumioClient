@@ -10,7 +10,7 @@ public sealed class ReplicaMalformedChatTests
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
         ReplicaVisibleEntity bot = GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 1, 0);
-        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World, extras: new[] { bot }).Accepted);
+        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.Replica, extras: new[] { bot }));
         Assert.True(GameplayWireFixtures.CommitEmptySnapshot(consumer.Replica));
         ReplicaBindingLookup beforeBinding = consumer.World.SelfLookup();
         int beforeEntities = consumer.World.VisibleEntityCount;
@@ -37,8 +37,8 @@ public sealed class ReplicaMalformedChatTests
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Bot);
         Assert.True(GameplayWireFixtures.AdmitRoom(
-            consumer.World,
-            extras: new[] { GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 1, 0) }).Accepted);
+            consumer.Replica,
+            extras: new[] { GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 1, 0) }));
         Assert.True(GameplayWireFixtures.CommitEmptySnapshot(consumer.Replica));
         Assert.True(GameplayWireFixtures.CommitJson(
             consumer.Replica,
@@ -71,8 +71,8 @@ public sealed class ReplicaMalformedChatTests
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
         Assert.True(GameplayWireFixtures.AdmitRoom(
-            consumer.World,
-            extras: new[] { GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 1, 0, tombstoned: true) }).Accepted);
+            consumer.Replica,
+            extras: new[] { GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 1, 0, tombstoned: true) }));
         Assert.True(GameplayWireFixtures.CommitJson(
             consumer.Replica,
             ReplicaUpdateKind.FullSnapshot,
@@ -104,8 +104,8 @@ public sealed class ReplicaMalformedChatTests
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
         Assert.True(GameplayWireFixtures.AdmitRoom(
-            consumer.World,
-            extras: new[] { GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 1, 0, inAoi: false) }).Accepted);
+            consumer.Replica,
+            extras: new[] { GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 1, 0, inAoi: false) }));
         Assert.True(GameplayWireFixtures.CommitCensus(consumer.Replica, (1, "player", "")));
         Assert.True(GameplayWireFixtures.CommitJson(
             consumer.Replica,

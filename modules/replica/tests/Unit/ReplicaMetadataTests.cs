@@ -9,6 +9,7 @@ public sealed class ReplicaMetadataTests
     {
         var replica = new ClientReplicaFactory().Create();
         replica.ResetForNewSession(new ReplicaResetRequest(7));
+        Assert.True(replica.TryObserveWelcome(Lumio.GameRuntime.Ecs.WireCodec.EncodePack(new Lumio.GameRuntime.Ecs.WelcomeMessage(1, new Lumio.GameRuntime.Ecs.NetEntityId(1, 1), 7))));
 
         ReplicaStageRequest snapshot = ReplicaRequests.FullSnapshot(7, 21, 3, 1);
         Assert.Equal(
@@ -50,6 +51,7 @@ public sealed class ReplicaMetadataTests
     {
         var replica = new ClientReplicaFactory().Create();
         replica.ResetForNewSession(new ReplicaResetRequest(3));
+        Assert.True(replica.TryObserveWelcome(Lumio.GameRuntime.Ecs.WireCodec.EncodePack(new Lumio.GameRuntime.Ecs.WelcomeMessage(1, new Lumio.GameRuntime.Ecs.NetEntityId(1, 1), 3))));
         ReplicaStageRequest snapshot = ReplicaRequests.FullSnapshot(3, 8, 1, 1);
         replica.StageAuthority(in snapshot, out ReplicaStageHandle handle, out _);
         var evidence = new byte[] { 9, 7, 3 };

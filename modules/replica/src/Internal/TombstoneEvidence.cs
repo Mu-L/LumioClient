@@ -3,6 +3,8 @@ using System.Collections.Generic;
 
 namespace Lumio.Client.Replica
 {
+    // Tracks only terminal destroy counters observed in Runtime WorldChange frames.
+    // Left-AOI removals are intentionally absent so they remain re-creatable.
     internal sealed class TombstoneEvidence
     {
         private readonly HashSet<ulong> _ids = new HashSet<ulong>();
