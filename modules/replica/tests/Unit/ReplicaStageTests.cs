@@ -165,7 +165,17 @@ internal static class ReplicaRequests
             update ?? Lumio.GameRuntime.Ecs.WireCodec.EncodePack(new Lumio.GameRuntime.Ecs.WorldChangeMessage(
                 0,
                 0,
-                Array.Empty<Lumio.GameRuntime.Ecs.CreateRecord>(),
+                new[]
+                {
+                    new Lumio.GameRuntime.Ecs.CreateRecord(
+                        "world",
+                        new Lumio.GameRuntime.Ecs.NetEntityId(1, 2),
+                        Array.Empty<Lumio.GameRuntime.Ecs.FieldValue>()),
+                    new Lumio.GameRuntime.Ecs.CreateRecord(
+                        "player",
+                        new Lumio.GameRuntime.Ecs.NetEntityId(1, 1),
+                        Array.Empty<Lumio.GameRuntime.Ecs.FieldValue>()),
+                },
                 Array.Empty<Lumio.GameRuntime.Ecs.FieldChange>(),
                 Array.Empty<Lumio.GameRuntime.Ecs.DestroyRecord>(),
                 Array.Empty<Lumio.GameRuntime.Ecs.ClientRpcRecord>())),

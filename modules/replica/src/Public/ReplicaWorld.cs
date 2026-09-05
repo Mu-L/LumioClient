@@ -392,7 +392,7 @@ namespace Lumio.Client.Replica
 
         internal bool ApplyCommitted(in ReplicaStageRequest request, WorldChangeMessage change)
         {
-            if (!TryValidateRuntimeChange(change))
+            if (!TryValidateRuntimeChange(in request, change))
             {
                 _lastRejectCode = GameplayReject.BadEnvelope;
                 return false;
@@ -429,11 +429,57 @@ namespace Lumio.Client.Replica
             }
         }
 
-        private bool TryValidateRuntimeChange(WorldChangeMessage change)
+        private bool TryValidateRuntimeChange(in ReplicaStageRequest request, WorldChangeMessage change)
         {
             if (change is null)
             {
                 return false;
+            }
+
+            if (request.Kind == ReplicaUpdateKind.FullSnapshot)
+            {
+                if (!_hasSelf || change.Creates.Count == 0)
+                {
+                    return false;
+                }
+
+                Type worldType = _manager.Registry.WorldEntityType;
+                string worldWireName = _manager.Registry.WireName(worldType);
+                NetEntityId selfId;
+                try
+                {
+                    selfId = _manager.World.Self.Id;
+                }
+                catch (InvalidOperationException)
+                {
+                    return false;
+                }
+
+                int worldCount = 0;
+                bool selfIncluded = false;
+                for (int i = 0; i < change.Creates.Count; i++)
+                {
+                    CreateRecord create = change.Creates[i];
+                    if (i == 0 && !string.Equals(create.EntityType, worldWireName, StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    if (string.Equals(create.EntityType, worldWireName, StringComparison.Ordinal))
+                    {
+                        worldCount++;
+                    }
+
+                    if (create.NetEntityId == selfId)
+                    {
+                        selfIncluded = true;
+                    }
+                }
+
+                if (worldCount != 1 || !selfIncluded)
+                {
+                    return false;
+                }
             }
 
             for (int i = 0; i < change.Creates.Count; i++)

@@ -39,7 +39,11 @@ public sealed class ReplicaC1StrictTests
         byte[] runtime = WireCodec.EncodePack(new WorldChangeMessage(
             1,
             0,
-            new[] { new CreateRecord("player", self, Array.Empty<FieldValue>()) },
+            new[]
+            {
+                new CreateRecord("world", new NetEntityId(1, 2), Array.Empty<FieldValue>()),
+                new CreateRecord("player", self, Array.Empty<FieldValue>()),
+            },
             Array.Empty<FieldChange>(),
             Array.Empty<DestroyRecord>(),
             Array.Empty<ClientRpcRecord>()));
@@ -100,6 +104,7 @@ public sealed class ReplicaC1StrictTests
             0,
             new[]
             {
+                new CreateRecord("world", new NetEntityId(1, 4), Array.Empty<FieldValue>()),
                 new CreateRecord("player", self, Array.Empty<FieldValue>()),
                 new CreateRecord("bot", left, Array.Empty<FieldValue>()),
                 new CreateRecord("bot", terminated, Array.Empty<FieldValue>())

@@ -54,7 +54,15 @@ internal static class GameplayWireFixtures
 
     public static string EmptySnapshot()
     {
-        return RuntimeChange(0, Array.Empty<CreateRecord>(), Array.Empty<DestroyRecord>(), Array.Empty<ClientRpcRecord>());
+        return RuntimeChange(
+            0,
+            new[]
+            {
+                new CreateRecord("world", new NetEntityId(1UL, 2UL), Array.Empty<FieldValue>()),
+                new CreateRecord("player", new NetEntityId(1UL, 1UL), Array.Empty<FieldValue>()),
+            },
+            Array.Empty<DestroyRecord>(),
+            Array.Empty<ClientRpcRecord>());
     }
 
     public static string ContractIdentitySnapshot()
@@ -63,8 +71,9 @@ internal static class GameplayWireFixtures
             7,
             new[]
             {
-                new CreateRecord("player", new NetEntityId(1, 101), Array.Empty<FieldValue>()),
-                new CreateRecord("bot", new NetEntityId(1, 102), Array.Empty<FieldValue>())
+                new CreateRecord("world", new NetEntityId(1, 2), Array.Empty<FieldValue>()),
+                new CreateRecord("player", new NetEntityId(1, 1), Array.Empty<FieldValue>()),
+                new CreateRecord("bot", new NetEntityId(1, 101), Array.Empty<FieldValue>())
             },
             Array.Empty<DestroyRecord>(),
             Array.Empty<ClientRpcRecord>());
@@ -73,6 +82,15 @@ internal static class GameplayWireFixtures
     public static string IdentityCensus(params (ulong NetEntityId, string EntityType, string UnmappedMark)[] records)
     {
         var creates = new List<CreateRecord>();
+        var counters = new HashSet<ulong>();
+        for (int i = 0; i < records.Length; i++)
+            counters.Add(records[i].NetEntityId);
+
+        ulong worldCounter = 1UL;
+        while (counters.Contains(worldCounter))
+            worldCounter++;
+        creates.Add(new CreateRecord("world", new NetEntityId(1UL, worldCounter), Array.Empty<FieldValue>()));
+
         for (int i = 0; i < records.Length; i++)
             creates.Add(new CreateRecord(records[i].EntityType, new NetEntityId(1, records[i].NetEntityId), Array.Empty<FieldValue>()));
         return RuntimeChange(0, creates, Array.Empty<DestroyRecord>(), Array.Empty<ClientRpcRecord>());
@@ -169,10 +187,22 @@ internal static class GameplayWireFixtures
         if (!replica.TryObserveWelcome(WireCodec.EncodePack(new WelcomeMessage(self.InstanceId, self, 1))))
             return false;
 
-        var creates = new List<CreateRecord>
+        var occupiedCounters = new HashSet<ulong> { self.Counter };
+        var creates = new List<CreateRecord>();
+        if (extras != null)
         {
-            new CreateRecord(selfType, self, Array.Empty<FieldValue>())
-        };
+            for (int i = 0; i < extras.Length; i++)
+            {
+                if (NetEntityId.TryParse(extras[i].NetEntityId, out NetEntityId extraId))
+                    occupiedCounters.Add(extraId.Counter);
+            }
+        }
+
+        ulong worldCounter = 1UL;
+        while (occupiedCounters.Contains(worldCounter))
+            worldCounter++;
+        creates.Add(new CreateRecord("world", new NetEntityId(self.InstanceId, worldCounter), Array.Empty<FieldValue>()));
+        creates.Add(new CreateRecord(selfType, self, Array.Empty<FieldValue>()));
         var destroys = new List<DestroyRecord>();
         if (extras != null)
         {
@@ -330,7 +360,22 @@ internal static class GameplayWireFixtures
 
     public static bool CommitEmptySnapshot(IClientReplica replica)
     {
-        return CommitJson(replica, ReplicaUpdateKind.FullSnapshot, EmptySnapshot(), 1, 10, 0, 0);
+        ReplicaBindingLookup selfLookup = replica.World.SelfLookup();
+        if (!selfLookup.Found || !NetEntityId.TryParse(selfLookup.Binding.NetEntityId, out NetEntityId self))
+        {
+            return false;
+        }
+
+        string snapshot = RuntimeChange(
+            0,
+            new[]
+            {
+                new CreateRecord("world", new NetEntityId(self.InstanceId, self.Counter == 1UL ? 2UL : 1UL), Array.Empty<FieldValue>()),
+                new CreateRecord("player", self, Array.Empty<FieldValue>()),
+            },
+            Array.Empty<DestroyRecord>(),
+            Array.Empty<ClientRpcRecord>());
+        return CommitJson(replica, ReplicaUpdateKind.FullSnapshot, snapshot, 1, 10, 0, 0);
     }
 
     public static bool CommitJson(

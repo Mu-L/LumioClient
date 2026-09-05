@@ -126,7 +126,7 @@ public sealed class ReplicaFullSnapshotRebuildTests
     }
 
     [Fact]
-    public void EmptyStateBlocksAreZeroLiveCensusNotAPlaceholder()
+    public void StrictFoundationSnapshotIncludesWorldAndSelf()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
         NetEntityId self = new(1UL, 2UL);
@@ -137,12 +137,16 @@ public sealed class ReplicaFullSnapshotRebuildTests
             new WorldChangeMessage(
                 1UL,
                 0UL,
-                new[] { new CreateRecord("world", new NetEntityId(1UL, 1UL), Array.Empty<FieldValue>()) },
+                new[]
+                {
+                    new CreateRecord("world", new NetEntityId(1UL, 1UL), Array.Empty<FieldValue>()),
+                    new CreateRecord("player", self, Array.Empty<FieldValue>()),
+                },
                 Array.Empty<FieldChange>(),
                 Array.Empty<DestroyRecord>(),
                 Array.Empty<ClientRpcRecord>())));
-        Assert.Empty(consumer.World.CopyIdentityRecords());
-        Assert.Equal(0, consumer.World.VisibleEntityCount);
+        Assert.Single(consumer.World.CopyIdentityRecords());
+        Assert.Equal(1, consumer.World.VisibleEntityCount);
         Assert.True(consumer.World.SelfLookup().Found);
         Assert.True(consumer.World.InputEnabled);
     }
