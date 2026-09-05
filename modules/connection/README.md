@@ -6,7 +6,7 @@
 
 - 阶段：LocalEmbedded 环回与 WSS 远程传输已落地；LocalSplitProcess 尚未实现
 - 优先级：P0
-- 架构基线：`LGE-V1.2-2026-08-27`
+- 公共契约来源：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
 - 公共契约来源：[`Wire 与 Transport`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#73-wire-与-transport)、[`Host Profile、平台与能力`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#10-host-profile平台与能力)
 - 内部设计：[`LumioClient 模块化架构`](../../docs/specs/2026-08-27-client-module-architecture-design.md)
 

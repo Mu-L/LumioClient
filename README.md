@@ -22,17 +22,17 @@
 </div>
 <!-- lumio-community:end -->
 
-## 架构基线
+## 架构与开发说明
 
-- Baseline：`LGE-V1.4-2026-08-27`
-- 唯一架构源：`LumioGameEngineArchitecture`
-- 本地镜像：[`docs/architecture/LumioGameEngine_Architecture_v1.2.md`](docs/architecture/LumioGameEngine_Architecture_v1.2.md)
+本仓处于预上线 Living Architecture 阶段，不发布或复制冻结基线。跨仓边界与可运行接口的唯一来源是
+`LumioGameEngine` 的 `.spec/knowledge/features/architecture.md`；托管 Runtime 通过
+`engine/abi/native-abi.json` 与 `engine/wire/*.json` 提供稳定接口，本仓不保存架构镜像。
 
 `LumioClient` 是客户端基础设施，不是具体游戏产品。它拥有连接、握手、ClientReplicaSession、客户端 World（同一 World Manager，不叫 ReplicaWorld）、输入和平台适配；Runtime 提供复制/回滚机制，Game 提供具体 Component/Mapping/表现内容。Server 与 Client 永远拥有独立的本地状态。
 
 ## Architecture Gate
 
-Handshake、Replication/Prediction、Mapping、Entity、Capability 和 Failure Bundle Schema 只维护在 `LumioGameEngineArchitecture`。连接或 Replica 行为变更必须补齐正向/失败 Fixture，并在架构源执行 `python3 tools/lumio_contract.py validate`；客户端不得通过本地快捷路径绕过 Envelope、权限或 Baseline 校验。
+Handshake、Replication/Prediction、Mapping、Entity、Capability 和 Failure Bundle 语义由架构源 ABI/wire 契约维护。连接或 Replica 行为变更必须补齐正向/失败 Fixture，并重编译直接消费者；客户端不得通过本地快捷路径绕过 Envelope、权限或 Baseline 校验。
 
 ## 拥有的状态与生命周期
 
@@ -125,7 +125,7 @@ Server 默认 CoreCLR；Server HybridCLR 仅作为后续可行性 Spike，不是
 - `LumioEngineSDK` 统一 Native 包、ABI Binding 和共享 Loader；Client 不直接引用 NativeCore/VoxelEngine 源码。
 - Server 公开的 Envelope/Endpoint/Handshake Contract；不引用 Server 实现。
 - Unity/HybridCLR/平台 SDK 和经过供应链审查的托管包，通过 Adapter 隔离。
-- 架构源发布物不上任何 NuGet feed，公共消费模型是字节级只读镜像加 sha256 锁：`contract-mirror/upstream` 是 `LumioGameEngineArchitecture` 已发布面的逐字节副本，pin 与范围见 [`contract-mirror/MIRROR.md`](contract-mirror/MIRROR.md)。镜像只读，改动由 `bash eng/verify-contract-mirror.sh` 在 CI 拦截。
+- 架构源发布物不上任何 NuGet feed；公共消费模型是直接读取 `LumioGameEngine` 的 ABI/wire 定义并在构建时锁定版本，本仓不保存架构镜像。
 
 ## Generated Contract Dependencies
 

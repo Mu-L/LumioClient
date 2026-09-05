@@ -6,7 +6,7 @@
 
 - 阶段：R-00349 ReplicaWorld 映射与 Room 聊天呈现已落地；Snapshot/Delta 事务路径沿用既有 Stage/Observe
 - 优先级：P0
-- 架构基线：`LGE-V1.2-2026-08-27`
+- 公共契约来源：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
 - 公共契约来源：[`World、ECS 与 Entity`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#5-worldecs-与-entity)、[`Replication、Prediction 与网络`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#7-replicationprediction-与网络)、架构仓 `engine/wire/gameplay-command-envelope-v1.json`（C-1）、`engine/wire/entity-binding-and-query-v1.json`（C-2）
 - 内部设计：[`LumioClient 模块化架构`](../../docs/specs/2026-08-27-client-module-architecture-design.md)
 
