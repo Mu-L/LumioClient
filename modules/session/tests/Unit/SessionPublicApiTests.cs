@@ -1,3 +1,4 @@
+using Lumio.Client.Connection;
 using Lumio.Client.Session;
 using Lumio.Client.Session.Tests.Support;
 
@@ -33,10 +34,18 @@ public sealed class SessionPublicApiTests
     }
 
     [Fact]
-    public void ServerWelcomeStartsGameplaySynchronizationWithoutALocalHello()
+    public void ServerWelcomeStartsGameplaySynchronizationWithoutLegacyBaselineAck()
     {
         var harness = new SessionHarness(true);
-        harness.Connect();
+        var endpoint = new ClientEndpoint(
+            "ws://127.0.0.1:1",
+            new byte[] { 1 },
+            new byte[] { 2 },
+            TimeSpan.FromSeconds(1),
+            new byte[] { 3 });
+        Assert.True(harness.Session.RequestConnect(
+            new SessionConnectRequest(1, endpoint),
+            CancellationToken.None).Succeeded);
         harness.Tick();
         harness.Deliver(SessionTestBytes.Welcome);
         harness.Tick();
@@ -47,5 +56,7 @@ public sealed class SessionPublicApiTests
 
         Assert.Equal(ClientSessionState.Active, harness.Session.GetSnapshot().State);
         Assert.True(harness.Session.GetSnapshot().RuntimeCommitted);
+        Assert.False(harness.Session.GetSnapshot().BaselineAckSent);
+        Assert.False(harness.Connections.Loopback.TryReceiveFromClient(out _));
     }
 }

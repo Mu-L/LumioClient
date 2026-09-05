@@ -442,8 +442,11 @@ namespace Lumio.Client.Session
             if (committed)
             {
                 _runtimeCommitted = true;
-                ConnectionSendResult sent = _connection.TrySend(new EncodedFrame(SessionWireBytes.BaselineAck));
-                _baselineAck = sent.Accepted;
+                if (_endpoint.InitialFrame.IsEmpty)
+                {
+                    ConnectionSendResult sent = _connection.TrySend(new EncodedFrame(SessionWireBytes.BaselineAck));
+                    _baselineAck = sent.Accepted;
+                }
                 _presented = presented;
                 _machine.TryEnter(ClientSessionState.Active);
                 return;
