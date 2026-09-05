@@ -363,6 +363,13 @@ namespace Lumio.Client.Replica
             for (int i = 0; i < runtimeChange.Rpcs.Count; i++)
             {
                 ClientRpcRecord rpc = runtimeChange.Rpcs[i];
+                if (!IsCanonicalRoomRpc(rpc))
+                {
+                    rejectCode = GameplayReject.BadEnvelope;
+                    _lastRejectCode = rejectCode;
+                    return false;
+                }
+
                 if (!string.Equals(rpc.ComponentId, "ChatComponent", StringComparison.Ordinal)
                     || !string.Equals(rpc.Method, "OnChatMessage", StringComparison.Ordinal))
                 {
@@ -501,7 +508,22 @@ namespace Lumio.Client.Replica
                 }
             }
 
+            for (int i = 0; i < change.Rpcs.Count; i++)
+            {
+                if (!IsCanonicalRoomRpc(change.Rpcs[i]))
+                {
+                    return false;
+                }
+            }
+
             return true;
+        }
+
+        private static bool IsCanonicalRoomRpc(ClientRpcRecord rpc)
+        {
+            return rpc.Scope == Scope.Room
+                && !rpc.Target.IsDefault
+                && rpc.Target == rpc.Sender;
         }
 
         private void RecreateManager()
