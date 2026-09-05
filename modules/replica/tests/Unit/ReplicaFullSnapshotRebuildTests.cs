@@ -20,9 +20,9 @@ public sealed class ReplicaFullSnapshotRebuildTests
                 0UL,
                 new[]
                 {
-                    new CreateRecord("WorldEntity", new NetEntityId(1UL, 1UL), Array.Empty<FieldValue>()),
-                    new CreateRecord("PlayerEntity", self, Array.Empty<FieldValue>()),
-                    new CreateRecord("BotEntity", new NetEntityId(1UL, 102UL), Array.Empty<FieldValue>()),
+                    new CreateRecord("world", new NetEntityId(1UL, 1UL), Array.Empty<FieldValue>()),
+                    new CreateRecord("player", self, Array.Empty<FieldValue>()),
+                    new CreateRecord("bot", new NetEntityId(1UL, 102UL), Array.Empty<FieldValue>()),
                 },
                 Array.Empty<FieldChange>(),
                 Array.Empty<DestroyRecord>(),
@@ -137,7 +137,7 @@ public sealed class ReplicaFullSnapshotRebuildTests
             new WorldChangeMessage(
                 1UL,
                 0UL,
-                new[] { new CreateRecord("WorldEntity", new NetEntityId(1UL, 1UL), Array.Empty<FieldValue>()) },
+                new[] { new CreateRecord("world", new NetEntityId(1UL, 1UL), Array.Empty<FieldValue>()) },
                 Array.Empty<FieldChange>(),
                 Array.Empty<DestroyRecord>(),
                 Array.Empty<ClientRpcRecord>())));
@@ -153,9 +153,9 @@ public sealed class ReplicaFullSnapshotRebuildTests
             0UL,
             new[]
             {
-                new CreateRecord("WorldEntity", new NetEntityId(self.InstanceId, 1UL), Array.Empty<FieldValue>()),
-                new CreateRecord("PlayerEntity", self, Array.Empty<FieldValue>()),
-                new CreateRecord("BotEntity", other, Array.Empty<FieldValue>()),
+                new CreateRecord("world", new NetEntityId(self.InstanceId, 1UL), Array.Empty<FieldValue>()),
+                new CreateRecord("player", self, Array.Empty<FieldValue>()),
+                new CreateRecord("bot", other, Array.Empty<FieldValue>()),
             },
             Array.Empty<FieldChange>(),
             Array.Empty<DestroyRecord>(),

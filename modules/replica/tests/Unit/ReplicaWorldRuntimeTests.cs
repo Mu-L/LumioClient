@@ -174,8 +174,8 @@ public sealed class ReplicaWorldRuntimeTests
             0UL,
             new[]
             {
-                new CreateRecord("WorldEntity", worldEntity, Array.Empty<FieldValue>()),
-                new CreateRecord("PlayerEntity", player, Array.Empty<FieldValue>())
+                new CreateRecord("world", worldEntity, Array.Empty<FieldValue>()),
+                new CreateRecord("player", player, Array.Empty<FieldValue>())
             },
             Array.Empty<FieldChange>(),
             Array.Empty<DestroyRecord>(),

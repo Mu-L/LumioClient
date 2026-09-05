@@ -295,8 +295,8 @@ public sealed class BotCadenceTests
             0UL,
             new[]
             {
-                new CreateRecord("WorldEntity", new NetEntityId(self.InstanceId, 1UL), Array.Empty<FieldValue>()),
-                new CreateRecord("PlayerEntity", self, Array.Empty<FieldValue>()),
+                new CreateRecord("world", new NetEntityId(self.InstanceId, 1UL), Array.Empty<FieldValue>()),
+                new CreateRecord("player", self, Array.Empty<FieldValue>()),
             },
             Array.Empty<FieldChange>(),
             Array.Empty<DestroyRecord>(),

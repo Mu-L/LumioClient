@@ -25,8 +25,8 @@ internal static class SessionTestBytes
         0UL,
         new[]
         {
-            new CreateRecord("WorldEntity", new NetEntityId(7UL, 1UL), Array.Empty<FieldValue>()),
-            new CreateRecord("PlayerEntity", Self, Array.Empty<FieldValue>()),
+            new CreateRecord("world", new NetEntityId(7UL, 1UL), Array.Empty<FieldValue>()),
+            new CreateRecord("player", Self, Array.Empty<FieldValue>()),
         },
         Array.Empty<FieldChange>(),
         Array.Empty<DestroyRecord>(),
