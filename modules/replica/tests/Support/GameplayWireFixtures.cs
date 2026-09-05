@@ -6,9 +6,34 @@ using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Client.Replica.Tests.Support;
 
+internal readonly struct ReplicaVisibleEntity
+{
+    public ReplicaVisibleEntity(string netEntityId, string entityType, string roomId, ulong connectionGeneration, ulong revision, ulong tick, ReplicaAttributeValue[] attributes, bool inAoi, bool tombstoned)
+    {
+        NetEntityId = netEntityId;
+        EntityType = entityType;
+        RoomId = roomId;
+        ConnectionGeneration = connectionGeneration;
+        Revision = revision;
+        Tick = tick;
+        Attributes = attributes;
+        InAoi = inAoi;
+        Tombstoned = tombstoned;
+    }
+    public string NetEntityId { get; }
+    public string EntityType { get; }
+    public string RoomId { get; }
+    public ulong ConnectionGeneration { get; }
+    public ulong Revision { get; }
+    public ulong Tick { get; }
+    public ReplicaAttributeValue[] Attributes { get; }
+    public bool InAoi { get; }
+    public bool Tombstoned { get; }
+}
+
 internal static class GameplayWireFixtures
 {
-    public static string RuntimeId(ulong counter) => new NetEntityId(0UL, counter).ToHex();
+    public static string RuntimeId(ulong counter) => new NetEntityId(1UL, counter).ToHex();
 
     public static string RuntimeId(string value)
     {
@@ -20,29 +45,55 @@ internal static class GameplayWireFixtures
         return ulong.TryParse(value, out ulong counter) ? RuntimeId(counter) : value;
     }
 
-    public const string ChatEventPayload = "01000000000000000100000000000000000000000000000065000000000000000200000067670700000000000000";
-    public const string ChatEventSha256 = "019c19137fdcc3eadf322f67067c254ef33fc2f81a7123bc89253d9a41d0d179";
+    public const string ChatEventPayload = "01000000000000000100000000000000010000000000000065000000000000000200000067670700000000000000";
+    public const string ChatEventSha256 = "28a636f76f14a079bc1813e954b709737d416e0354da4f826fffd50651717066";
     public const string ChatInputPayload = "020000006767";
     public const string ChatInputSha256 = "5dbd584f1718b8bcd0dab4abeea83169f4a990defab81a8316ed845798d92dab";
     public const string ChatComponentPayload = "0200000067670700000000000000";
     public const string ChatComponentSha256 = "ba9d631032a1ecb5c1b4723b9d9603cf29c8db92736620112cac56b0051d5259";
-    public const string IdentityTwoLivePayload = "02000000650000000000000006000000706c617965720100000061660000000000000003000000626f740100000062";
-    public const string IdentityTwoLiveSha256 = "4ae28198083875a42260bcd2c9493077c1726f351eace497c21c51f136d247b1";
 
     public static string EmptySnapshot()
     {
-        return "{\"messageType\":\"FullSnapshot\",\"tickId\":0,\"revision\":0,\"stateBlocks\":[]}";
+        return RuntimeChange(
+            0,
+            new[]
+            {
+                new CreateRecord("world", new NetEntityId(1UL, 2UL), Array.Empty<FieldValue>()),
+                new CreateRecord("player", new NetEntityId(1UL, 1UL), Array.Empty<FieldValue>()),
+            },
+            Array.Empty<DestroyRecord>(),
+            Array.Empty<ClientRpcRecord>());
     }
 
     public static string ContractIdentitySnapshot()
     {
-        return IdentitySnapshot(IdentityTwoLivePayload, IdentityTwoLiveSha256);
+        return RuntimeChange(
+            7,
+            new[]
+            {
+                new CreateRecord("world", new NetEntityId(1, 2), Array.Empty<FieldValue>()),
+                new CreateRecord("player", new NetEntityId(1, 1), Array.Empty<FieldValue>()),
+                new CreateRecord("bot", new NetEntityId(1, 101), Array.Empty<FieldValue>())
+            },
+            Array.Empty<DestroyRecord>(),
+            Array.Empty<ClientRpcRecord>());
     }
 
     public static string IdentityCensus(params (ulong NetEntityId, string EntityType, string UnmappedMark)[] records)
     {
-        (string payload, string sha) = EncodeIdentity(records);
-        return IdentitySnapshot(payload, sha, 0, 0);
+        var creates = new List<CreateRecord>();
+        var counters = new HashSet<ulong>();
+        for (int i = 0; i < records.Length; i++)
+            counters.Add(records[i].NetEntityId);
+
+        ulong worldCounter = 1UL;
+        while (counters.Contains(worldCounter))
+            worldCounter++;
+        creates.Add(new CreateRecord("world", new NetEntityId(1UL, worldCounter), Array.Empty<FieldValue>()));
+
+        for (int i = 0; i < records.Length; i++)
+            creates.Add(new CreateRecord(records[i].EntityType, new NetEntityId(1, records[i].NetEntityId), Array.Empty<FieldValue>()));
+        return RuntimeChange(0, creates, Array.Empty<DestroyRecord>(), Array.Empty<ClientRpcRecord>());
     }
 
     public static bool CommitCensus(IClientReplica replica, params (ulong NetEntityId, string EntityType, string UnmappedMark)[] records)
@@ -50,54 +101,10 @@ internal static class GameplayWireFixtures
         return CommitJson(replica, ReplicaUpdateKind.FullSnapshot, IdentityCensus(records), 1, 10, 0, 0);
     }
 
-    public static string IdentitySnapshot(string payload, string sha, ulong tickId = 7, ulong revision = 1)
-    {
-        return "{\"messageType\":\"FullSnapshot\",\"tickId\":" + tickId.ToString(System.Globalization.CultureInfo.InvariantCulture) +
-               ",\"revision\":" + revision.ToString(System.Globalization.CultureInfo.InvariantCulture) +
-               ",\"stateBlocks\":[" + Block("entity.identity", payload, sha) + "]}";
-    }
-
     public static string ConnectionSupersededNotice(ulong netEntityId = 101, ulong newConnectionGeneration = 2)
     {
         return Encoding.UTF8.GetString(WireCodec.EncodePack(
-            new ConnectionSupersededMessage(new NetEntityId(0UL, netEntityId), newConnectionGeneration)));
-    }
-
-    public static (string Payload, string Sha256) EncodeIdentity(params (ulong NetEntityId, string EntityType, string UnmappedMark)[] records)
-    {
-        int size = 4;
-        var utf8 = new List<byte[]>();
-        for (int i = 0; i < records.Length; i++)
-        {
-            byte[] type = Encoding.UTF8.GetBytes(records[i].EntityType);
-            byte[] mark = Encoding.UTF8.GetBytes(records[i].UnmappedMark);
-            utf8.Add(type);
-            utf8.Add(mark);
-            size += 8 + 4 + type.Length + 4 + mark.Length;
-        }
-
-        byte[] bytes = new byte[size];
-        int offset = 0;
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), (uint)records.Length);
-        offset += 4;
-        for (int i = 0; i < records.Length; i++)
-        {
-            WriteU64(bytes, ref offset, records[i].NetEntityId);
-            byte[] type = utf8[i * 2];
-            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), (uint)type.Length);
-            offset += 4;
-            type.CopyTo(bytes, offset);
-            offset += type.Length;
-            byte[] mark = utf8[(i * 2) + 1];
-            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), (uint)mark.Length);
-            offset += 4;
-            mark.CopyTo(bytes, offset);
-            offset += mark.Length;
-        }
-
-        string payload = Convert.ToHexString(bytes).ToLowerInvariant();
-        string sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        return (payload, sha);
+            new ConnectionSupersededMessage(new NetEntityId(1UL, netEntityId), newConnectionGeneration)));
     }
 
     public static string SnapshotWithChatEvent()
@@ -108,9 +115,9 @@ internal static class GameplayWireFixtures
 
     public static string ChatDelta(string payload, string sha, ulong tickId, ulong revision)
     {
-        return "{\"messageType\":\"Delta\",\"tickId\":" + tickId.ToString(System.Globalization.CultureInfo.InvariantCulture) +
-               ",\"revision\":" + revision.ToString(System.Globalization.CultureInfo.InvariantCulture) +
-               ",\"changedBlocks\":[" + Block("chat.event", payload, sha) + "]}";
+        if (!TryDecodeChatEvent(payload, out ClientRpcRecord rpc))
+            return "{\"messageType\":\"Delta\"}";
+        return RuntimeChange(tickId, Array.Empty<CreateRecord>(), Array.Empty<DestroyRecord>(), new[] { rpc });
     }
 
     public static string ContractChatDelta()
@@ -132,7 +139,8 @@ internal static class GameplayWireFixtures
 
     public static string BadHashDelta()
     {
-        return ChatDelta(ChatEventPayload, "0000000000000000000000000000000000000000000000000000000000000000", 7, 1);
+        return "{\"messageType\":\"Delta\",\"tickId\":7,\"revision\":1,\"changedBlocks\":[" +
+               Block("chat.event", ChatEventPayload, "0000000000000000000000000000000000000000000000000000000000000000") + "]}";
     }
 
     public static (string Payload, string Sha256) EncodeChatEvent(
@@ -147,7 +155,7 @@ internal static class GameplayWireFixtures
         int offset = 0;
         WriteU64(bytes, ref offset, messageId);
         WriteU64(bytes, ref offset, roomSequence);
-        WriteU64(bytes, ref offset, 0UL);
+        WriteU64(bytes, ref offset, 1UL);
         WriteU64(bytes, ref offset, senderNetEntityId);
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), (uint)utf8.Length);
         offset += 4;
@@ -166,26 +174,60 @@ internal static class GameplayWireFixtures
         return new ReplicaChatConsumer(kind, replica);
     }
 
-    public static ReplicaAdmissionResult AdmitRoom(
-        IReplicaWorld world,
+    public static bool AdmitRoom(
+        IClientReplica replica,
         string selfId = "1",
         string selfType = "player",
         string roomId = "room-01",
         ReplicaVisibleEntity[]? extras = null)
     {
         selfId = RuntimeId(selfId);
-        var visible = new List<ReplicaVisibleEntity>
+        if (!NetEntityId.TryParse(selfId, out NetEntityId self))
+            return false;
+        if (!replica.TryObserveWelcome(WireCodec.EncodePack(new WelcomeMessage(self.InstanceId, self, 1))))
+            return false;
+
+        var occupiedCounters = new HashSet<ulong> { self.Counter };
+        var creates = new List<CreateRecord>();
+        if (extras != null)
         {
-            Entity(selfId, selfType, roomId, generation: 1, revision: 1, tick: 0)
-        };
-        if (extras != null && extras.Length > 0)
-        {
-            visible.AddRange(extras);
+            for (int i = 0; i < extras.Length; i++)
+            {
+                if (NetEntityId.TryParse(extras[i].NetEntityId, out NetEntityId extraId))
+                    occupiedCounters.Add(extraId.Counter);
+            }
         }
-        var admission = new ReplicaAdmission(
-            new ReplicaBinding("acct-07", roomId, selfId, selfType, 1),
-            visible.ToArray());
-        return world.InstallAdmission(in admission);
+
+        ulong worldCounter = 1UL;
+        while (occupiedCounters.Contains(worldCounter))
+            worldCounter++;
+        creates.Add(new CreateRecord("world", new NetEntityId(self.InstanceId, worldCounter), Array.Empty<FieldValue>()));
+        creates.Add(new CreateRecord(selfType, self, Array.Empty<FieldValue>()));
+        var destroys = new List<DestroyRecord>();
+        if (extras != null)
+        {
+            for (int i = 0; i < extras.Length; i++)
+            {
+                ReplicaVisibleEntity item = extras[i];
+                if (item.InAoi && NetEntityId.TryParse(item.NetEntityId, out NetEntityId id))
+                {
+                    creates.Add(new CreateRecord(item.EntityType, id, Array.Empty<FieldValue>()));
+                    if (item.Tombstoned)
+                        destroys.Add(new DestroyRecord(id, DestroyReason.Terminated));
+                }
+            }
+        }
+
+        return CommitWorldChange(
+            replica,
+            1,
+            new WorldChangeMessage(
+                0,
+                0,
+                creates,
+                Array.Empty<FieldChange>(),
+                destroys,
+                Array.Empty<ClientRpcRecord>()));
     }
 
     public static ReplicaVisibleEntity Entity(
@@ -318,7 +360,22 @@ internal static class GameplayWireFixtures
 
     public static bool CommitEmptySnapshot(IClientReplica replica)
     {
-        return CommitJson(replica, ReplicaUpdateKind.FullSnapshot, EmptySnapshot(), 1, 10, 0, 0);
+        ReplicaBindingLookup selfLookup = replica.World.SelfLookup();
+        if (!selfLookup.Found || !NetEntityId.TryParse(selfLookup.Binding.NetEntityId, out NetEntityId self))
+        {
+            return false;
+        }
+
+        string snapshot = RuntimeChange(
+            0,
+            new[]
+            {
+                new CreateRecord("world", new NetEntityId(self.InstanceId, self.Counter == 1UL ? 2UL : 1UL), Array.Empty<FieldValue>()),
+                new CreateRecord("player", self, Array.Empty<FieldValue>()),
+            },
+            Array.Empty<DestroyRecord>(),
+            Array.Empty<ClientRpcRecord>());
+        return CommitJson(replica, ReplicaUpdateKind.FullSnapshot, snapshot, 1, 10, 0, 0);
     }
 
     public static bool CommitJson(
@@ -355,6 +412,64 @@ internal static class GameplayWireFixtures
     private static string Block(string mappingId, string payload, string sha)
     {
         return "{\"mappingId\":\"" + mappingId + "\",\"payload\":\"" + payload + "\",\"payloadSha256\":\"" + sha + "\"}";
+    }
+
+    private static bool CommitWorldChange(IClientReplica replica, ulong generation, WorldChangeMessage change)
+    {
+        ReplicaStageRequest request = new(
+            generation,
+            ReplicaUpdateKind.FullSnapshot,
+            0,
+            0,
+            0,
+            0,
+            WireCodec.EncodePack(change),
+            Array.Empty<ulong>(),
+            Array.Empty<ulong>());
+        ReplicaStageResult staged = replica.StageAuthority(in request, out ReplicaStageHandle handle, out _);
+        return staged.Status == ReplicaStageStatus.Staged
+            && replica.ObserveRuntimeOutcome(handle, ReplicaRuntimeOutcome.CommittedOutcome(), out _) == ReplicaOutcomeStatus.Observed;
+    }
+
+    private static string RuntimeChange(ulong tick, IReadOnlyList<CreateRecord> creates, IReadOnlyList<DestroyRecord> destroys, IReadOnlyList<ClientRpcRecord> rpcs)
+    {
+        return Encoding.UTF8.GetString(WireCodec.EncodePack(new WorldChangeMessage(
+            tick,
+            0,
+            creates,
+            Array.Empty<FieldChange>(),
+            destroys,
+            rpcs)));
+    }
+
+    private static bool TryDecodeChatEvent(string payload, out ClientRpcRecord rpc)
+    {
+        rpc = default;
+        byte[] data;
+        try
+        {
+            data = Convert.FromHexString(payload);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        if (data.Length < 36)
+            return false;
+        int offset = 0;
+        ulong messageId = BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(offset, 8)); offset += 8;
+        ulong roomSequence = BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(offset, 8)); offset += 8;
+        ulong instance = BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(offset, 8)); offset += 8;
+        ulong counter = BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(offset, 8)); offset += 8;
+        if (offset + 4 > data.Length) return false;
+        uint length = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4)); offset += 4;
+        if (length > (uint)(data.Length - offset) || offset + length + 8 != data.Length) return false;
+        string text = Encoding.UTF8.GetString(data, offset, (int)length); offset += (int)length;
+        ulong tick = BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(offset, 8));
+        NetEntityId sender = new(instance, counter);
+        rpc = new ClientRpcRecord(sender, "ChatComponent", "OnChatMessage", new object[] { text }, messageId, roomSequence, sender, tick);
+        return true;
     }
 
     private static void WriteU64(byte[] dest, ref int offset, ulong value)

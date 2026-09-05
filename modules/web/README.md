@@ -6,7 +6,7 @@
 
 - 阶段:Wave 4 交付(浏览器逻辑的端到端验收由集成阶段 Playwright 执行)
 - 优先级:P1
-- 架构基线:`LGE-V1.2-2026-08-27`
+- 公共契约来源：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
 - 公共契约来源:架构仓 `engine/wire/hello-v1.json` 同源的 `hello-wire-v1.json`;页面运行时 `fetch('./contract.json')` 读取,集成方负责把契约文件复制到页面旁边
 
 ## 责任

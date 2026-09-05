@@ -183,7 +183,7 @@ public static class HelloBotCli
                 }
             }
 
-            if (!resultWritten)
+            if (!ok || !resultWritten)
             {
                 await WriteResultAsync(
                     parsed.ResultPath,

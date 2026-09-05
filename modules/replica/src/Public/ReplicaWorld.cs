@@ -10,15 +10,13 @@ namespace Lumio.Client.Replica
 {
     public sealed class ReplicaWorld : IReplicaWorld
     {
-        private const int MaxBindingsPerRoom = 4096;
-        private readonly List<ReplicaChatLine> _chat = new List<ReplicaChatLine>();
+        private IReplicaChatSink? _presentation;
         private readonly List<WorldMessage> _deferredFrames = new List<WorldMessage>();
         private readonly List<WorldMessage> _deferredQueries = new List<WorldMessage>();
         private WorldManager _manager;
         private EntityBindingQuery _runtimeQueries;
         private ReplicaBinding _self;
         private bool _hasSelf;
-        private bool _hasClaim;
         private bool _inputEnabled;
         private bool _superseded;
         private ReplicaConnectionSuperseded _lastSuperseded;
@@ -96,72 +94,6 @@ namespace Lumio.Client.Replica
             AddDeferred(_deferredFrames, drained.Frames);
             _deferredQueries.Clear();
             return queries.ToArray();
-        }
-
-        public ReplicaAdmissionResult InstallAdmission(in ReplicaAdmission admission)
-        {
-            if (admission.HasForbiddenAccountEntityRef)
-            {
-                return RejectAdmission("invalid_binding_shape");
-            }
-
-            ReplicaBinding self = admission.Self;
-            if (!IsEntityType(self.EntityType)
-                || self.ConnectionGeneration < 1UL
-                || string.IsNullOrEmpty(self.AccountId)
-                || string.IsNullOrEmpty(self.RoomId)
-                || !ReplicaNetIds.TryParse(self.NetEntityId, out NetEntityId selfId))
-            {
-                return RejectAdmission("invalid_binding_shape");
-            }
-
-            ReplicaVisibleEntity[] visible = admission.VisibleEntities ?? Array.Empty<ReplicaVisibleEntity>();
-            if (visible.Length > MaxBindingsPerRoom)
-            {
-                return RejectAdmission("invalid_binding_shape");
-            }
-
-            var creates = new List<CreateRecord>();
-            var destroys = new List<NetEntityId>();
-            ulong instanceId = selfId.InstanceId;
-            for (int i = 0; i < visible.Length; i++)
-            {
-                ReplicaVisibleEntity item = visible[i];
-                if (!IsEntityType(item.EntityType) || string.IsNullOrEmpty(item.NetEntityId) || string.IsNullOrEmpty(item.RoomId))
-                {
-                    return RejectAdmission("invalid_binding_shape");
-                }
-
-                if (!item.InAoi)
-                {
-                    continue;
-                }
-
-                if (!ReplicaNetIds.TryParse(item.NetEntityId, out NetEntityId id))
-                {
-                    return RejectAdmission("invalid_binding_shape");
-                }
-                if (id.InstanceId != instanceId)
-                {
-                    return RejectAdmission("invalid_binding_shape");
-                }
-
-                creates.Add(new CreateRecord(item.EntityType, id, Array.Empty<FieldValue>()));
-                if (item.Tombstoned)
-                {
-                    destroys.Add(id);
-                }
-            }
-
-            _self = self;
-            _hasSelf = true;
-            _hasClaim = admission.HasClaim;
-            _lastRejectCode = string.Empty;
-            if (!ApplyPack(0UL, creates, Array.Empty<FieldChange>(), destroys, Array.Empty<ClientRpcRecord>()))
-            {
-                return RejectAdmission("runtime_failure");
-            }
-            return new ReplicaAdmissionResult(true, string.Empty);
         }
 
         public ReplicaBindingLookup SelfLookup()
@@ -277,7 +209,14 @@ namespace Lumio.Client.Replica
 
         public IReadOnlyList<ReplicaChatLine> CopyChatWindow()
         {
-            return _chat.ToArray();
+            return _presentation is ReplicaChatPresentation presentation
+                ? presentation.CopyLines()
+                : Array.Empty<ReplicaChatLine>();
+        }
+
+        internal void AttachPresentation(IReplicaChatSink presentation)
+        {
+            _presentation = presentation;
         }
 
         public IReadOnlyList<ReplicaIdentityRecord> CopyIdentityRecords()
@@ -332,10 +271,9 @@ namespace Lumio.Client.Replica
         internal void Reset(ulong generation)
         {
             RecreateManager();
-            _chat.Clear();
+            _presentation?.Reset();
             _self = default(ReplicaBinding);
             _hasSelf = false;
-            _hasClaim = false;
             _inputEnabled = false;
             _superseded = false;
             _lastSuperseded = default(ReplicaConnectionSuperseded);
@@ -346,11 +284,56 @@ namespace Lumio.Client.Replica
             _lastRejectCode = string.Empty;
         }
 
-        internal void ObserveSuperseded(in ReplicaConnectionSuperseded notice)
+        internal bool ObserveSuperseded(ConnectionSupersededMessage superseded, out ReplicaConnectionSuperseded notice)
         {
+            if (superseded is null
+                || superseded.NetEntityId.IsDefault
+                || superseded.NewConnectionGeneration == 0UL)
+            {
+                _lastRejectCode = "bad_envelope";
+                notice = default(ReplicaConnectionSuperseded);
+                return false;
+            }
+
+            _manager.Enqueue(superseded);
+            _manager.Tick();
+            notice = new ReplicaConnectionSuperseded(
+                true,
+                "connection_superseded",
+                superseded.NetEntityId.ToHex(),
+                superseded.NewConnectionGeneration);
             _superseded = true;
             _inputEnabled = false;
             _lastSuperseded = notice;
+            _lastRejectCode = string.Empty;
+            return true;
+        }
+
+        internal bool ObserveWelcome(WelcomeMessage welcome)
+        {
+            if (welcome.InstanceId == 0UL
+                || welcome.Self.IsDefault
+                || welcome.Self.InstanceId != welcome.InstanceId
+                || welcome.ConnectionGeneration == 0UL
+                || welcome.ConnectionGeneration != _replicaGeneration)
+            {
+                _lastRejectCode = GameplayReject.BadEnvelope;
+                return false;
+            }
+
+            _manager.Enqueue(welcome);
+            _manager.Tick();
+            _self = new ReplicaBinding(
+                string.Empty,
+                string.Empty,
+                welcome.Self.ToHex(),
+                string.Empty,
+                welcome.ConnectionGeneration);
+            _hasSelf = true;
+            _superseded = false;
+            _inputEnabled = false;
+            _lastRejectCode = string.Empty;
+            return true;
         }
 
         internal bool TryValidateAuthority(in ReplicaStageRequest request, out string rejectCode)
@@ -361,172 +344,186 @@ namespace Lumio.Client.Replica
                 return true;
             }
 
-            if (TryDecodeRuntimeWorldChange(request.Update, out _))
+            if (!TryDecodeRuntimeWorldChange(request.Update, out WorldChangeMessage runtimeChange))
             {
-                return true;
-            }
-
-            ulong instanceId = ResolveDecodeInstanceId();
-            if (!GameplayCodec.TryDecodeAuthority(request.Kind, request.Update, out DecodedGameplayMessage decoded, out rejectCode, instanceId))
-            {
-                if (string.IsNullOrEmpty(rejectCode))
-                {
-                    rejectCode = GameplayReject.BadEnvelope;
-                }
-
+                rejectCode = GameplayReject.BadEnvelope;
                 _lastRejectCode = rejectCode;
                 return false;
             }
 
-            for (int i = 0; i < decoded.Blocks.Length; i++)
+            if (!_hasSelf)
             {
-                DecodedGameplayBlock block = decoded.Blocks[i];
-                if (!block.HasChatEvent)
-                {
-                    continue;
-                }
+                rejectCode = GameplayReject.BadEnvelope;
+                _lastRejectCode = rejectCode;
+                return false;
+            }
 
-                DecodedChatEvent chat = block.ChatEvent;
-                bool sequenceOk = _lastRoomSequence == 0UL
-                    ? chat.RoomSequence > 0UL
-                    : chat.RoomSequence == _lastRoomSequence + 1UL;
-                if (!sequenceOk || chat.MessageId <= _lastMessageId)
+            ulong lastRoomSequence = request.Kind == ReplicaUpdateKind.FullSnapshot ? 0UL : _lastRoomSequence;
+            ulong lastMessageId = request.Kind == ReplicaUpdateKind.FullSnapshot ? 0UL : _lastMessageId;
+            for (int i = 0; i < runtimeChange.Rpcs.Count; i++)
+            {
+                ClientRpcRecord rpc = runtimeChange.Rpcs[i];
+                if (!IsCanonicalRoomRpc(rpc))
                 {
                     rejectCode = GameplayReject.BadEnvelope;
                     _lastRejectCode = rejectCode;
                     return false;
                 }
+
+                if (!string.Equals(rpc.ComponentId, "ChatComponent", StringComparison.Ordinal)
+                    || !string.Equals(rpc.Method, "OnChatMessage", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (rpc.Args.Count == 0
+                    || rpc.Args[0] is not string
+                    || rpc.Sender.IsDefault
+                    || rpc.MessageId == 0UL
+                    || rpc.RoomSequence == 0UL)
+                {
+                    rejectCode = GameplayReject.BadEnvelope;
+                    _lastRejectCode = rejectCode;
+                    return false;
+                }
+
+                bool sequenceOk = lastRoomSequence == 0UL
+                    ? rpc.RoomSequence > 0UL
+                    : rpc.RoomSequence == lastRoomSequence + 1UL;
+                if (!sequenceOk || rpc.MessageId <= lastMessageId)
+                {
+                    rejectCode = GameplayReject.BadEnvelope;
+                    _lastRejectCode = rejectCode;
+                    return false;
+                }
+
+                lastRoomSequence = rpc.RoomSequence;
+                lastMessageId = rpc.MessageId;
             }
 
             _lastRejectCode = string.Empty;
             return true;
         }
 
-        internal void ApplyCommitted(in ReplicaStageRequest request)
+        internal bool ApplyCommitted(in ReplicaStageRequest request, WorldChangeMessage change)
         {
-            if (TryDecodeRuntimeWorldChange(request.Update, out WorldChangeMessage runtimeChange))
-            {
-                ApplyRuntimeCommitted(in request, runtimeChange);
-                return;
-            }
-
-            ulong instanceId = ResolveDecodeInstanceId();
-            if (!GameplayCodec.TryDecodeAuthority(request.Kind, request.Update, out DecodedGameplayMessage decoded, out _, instanceId))
+            if (!TryValidateRuntimeChange(in request, change))
             {
                 _lastRejectCode = GameplayReject.BadEnvelope;
-                return;
+                return false;
             }
 
-            var creates = new List<CreateRecord>();
-            var rpcs = new List<ClientRpcRecord>();
-            var chatLines = new List<ReplicaChatLine>();
-            if (request.Kind == ReplicaUpdateKind.FullSnapshot)
+            try
             {
-                RecreateManager();
-                if (!ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId selfId))
-                {
-                    _lastRejectCode = GameplayReject.BadEnvelope;
-                    return;
-                }
-                instanceId = selfId.InstanceId;
-                _chat.Clear();
-                _lastRoomSequence = 0UL;
-                _lastMessageId = 0UL;
-                _replicaGeneration = request.Generation;
+                return ApplyRuntimeCommitted(in request, change);
             }
-
-            for (int i = 0; i < decoded.Blocks.Length; i++)
-            {
-                DecodedGameplayBlock block = decoded.Blocks[i];
-                if (block.HasIdentity)
-                {
-                    DecodedIdentityRecord[] records = block.IdentityRecords;
-                    for (int r = 0; r < records.Length; r++)
-                    {
-                        DecodedIdentityRecord record = records[r];
-                        creates.Add(new CreateRecord(record.EntityType, record.NetEntityId, Array.Empty<FieldValue>()));
-                    }
-                }
-
-                if (block.HasChatEvent)
-                {
-                    DecodedChatEvent chat = block.ChatEvent;
-                    if (!ReplicaNetIds.TryParse(chat.SenderNetEntityId, out NetEntityId sender))
-                    {
-                        _lastRejectCode = GameplayReject.BadEnvelope;
-                        return;
-                    }
-
-                    rpcs.Add(new ClientRpcRecord(
-                        sender,
-                        "ChatComponent",
-                        "OnChatMessage",
-                        new object[] { chat.Text },
-                        chat.MessageId,
-                        chat.RoomSequence,
-                        sender,
-                        chat.AppliedTick));
-                    chatLines.Add(new ReplicaChatLine(chat.MessageId, chat.RoomSequence, chat.SenderNetEntityId, chat.Text, chat.AppliedTick));
-                    _lastRoomSequence = chat.RoomSequence;
-                    _lastMessageId = chat.MessageId;
-                }
-            }
-
-            var destroys = new List<NetEntityId>();
-            ReadOnlySpan<ulong> tombstones = request.TombstoneEntityIds.Span;
-            for (int i = 0; i < tombstones.Length; i++)
-            {
-                string tombstoneText = instanceId.ToString("x16", CultureInfo.InvariantCulture)
-                    + tombstones[i].ToString("x16", CultureInfo.InvariantCulture);
-                if (!NetEntityId.TryParse(tombstoneText, out NetEntityId tombstoneId) || tombstoneId.IsDefault)
-                {
-                    _lastRejectCode = GameplayReject.BadEnvelope;
-                    return;
-                }
-
-                destroys.Add(tombstoneId);
-            }
-
-            if (!ApplyPack(
-                decoded.TickId,
-                creates,
-                Array.Empty<FieldChange>(),
-                destroys,
-                rpcs))
+            catch (Exception)
             {
                 _lastRejectCode = GameplayReject.BadEnvelope;
-                return;
-            }
-            for (int i = 0; i < chatLines.Count; i++)
-            {
-                _chat.Add(chatLines[i]);
-            }
-
-            if (request.Kind == ReplicaUpdateKind.FullSnapshot && !_superseded)
-            {
-                _inputEnabled = true;
+                return false;
             }
         }
 
-        private bool ApplyPack(
-            ulong tick,
-            List<CreateRecord> creates,
-            IReadOnlyList<FieldChange> fields,
-            List<NetEntityId> destroys,
-            IReadOnlyList<ClientRpcRecord> rpcs)
+        private bool ApplyPack(in WorldChangeMessage change)
         {
-            if (_hasSelf && ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId selfId))
-            {
-                EnqueueRuntimeFrame(new WelcomeMessage(selfId.InstanceId, selfId, _self.ConnectionGeneration, "self"));
-            }
-            else
+            if (!_hasSelf)
             {
                 return false;
             }
 
-            EnqueueRuntimeFrame(new WorldChangeMessage(tick, creates, fields, destroys, rpcs));
-            _manager.Tick();
+            try
+            {
+                _manager.Enqueue(change);
+                _manager.Tick();
+                return true;
+            }
+            catch (Exception)
+            {
+                _lastRejectCode = GameplayReject.BadEnvelope;
+                return false;
+            }
+        }
+
+        private bool TryValidateRuntimeChange(in ReplicaStageRequest request, WorldChangeMessage change)
+        {
+            if (change is null)
+            {
+                return false;
+            }
+
+            if (request.Kind == ReplicaUpdateKind.FullSnapshot)
+            {
+                if (!_hasSelf || change.Creates.Count == 0)
+                {
+                    return false;
+                }
+
+                Type worldType = _manager.Registry.WorldEntityType;
+                string worldWireName = _manager.Registry.WireName(worldType);
+                NetEntityId selfId;
+                try
+                {
+                    selfId = _manager.World.Self.Id;
+                }
+                catch (InvalidOperationException)
+                {
+                    return false;
+                }
+
+                int worldCount = 0;
+                bool selfIncluded = false;
+                for (int i = 0; i < change.Creates.Count; i++)
+                {
+                    CreateRecord create = change.Creates[i];
+                    if (i == 0 && !string.Equals(create.EntityType, worldWireName, StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    if (string.Equals(create.EntityType, worldWireName, StringComparison.Ordinal))
+                    {
+                        worldCount++;
+                    }
+
+                    if (create.NetEntityId == selfId)
+                    {
+                        selfIncluded = true;
+                    }
+                }
+
+                if (worldCount != 1 || !selfIncluded)
+                {
+                    return false;
+                }
+            }
+
+            for (int i = 0; i < change.Creates.Count; i++)
+            {
+                CreateRecord create = change.Creates[i];
+                if (create.NetEntityId.IsDefault
+                    || string.IsNullOrEmpty(create.EntityType)
+                    || !_manager.Registry.TryResolveEntityType(create.EntityType, out _))
+                {
+                    return false;
+                }
+            }
+
+            for (int i = 0; i < change.Rpcs.Count; i++)
+            {
+                if (!IsCanonicalRoomRpc(change.Rpcs[i]))
+                {
+                    return false;
+                }
+            }
+
             return true;
+        }
+
+        private static bool IsCanonicalRoomRpc(ClientRpcRecord rpc)
+        {
+            return rpc.Scope == Scope.Room
+                && !rpc.Target.IsDefault
+                && rpc.Target == rpc.Sender;
         }
 
         private void RecreateManager()
@@ -539,9 +536,20 @@ namespace Lumio.Client.Replica
             _runtimeQueries = EntityBindingQuery.Create(_manager);
         }
 
-        private void EnqueueRuntimeFrame(WorldMessage message)
+        private bool RecreateManagerForFullSnapshot()
         {
-            _manager.Enqueue(WireCodec.DecodePack(WireCodec.EncodePack(message)));
+            if (!_hasSelf
+                || !ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId selfId)
+                || selfId.IsDefault
+                || _self.ConnectionGeneration == 0UL)
+            {
+                return false;
+            }
+
+            RecreateManager();
+            _manager.Enqueue(new WelcomeMessage(selfId.InstanceId, selfId, _self.ConnectionGeneration));
+            _manager.Tick();
+            return true;
         }
 
         private static bool TryDecodeRuntimeWorldChange(ReadOnlyMemory<byte> update, out WorldChangeMessage change)
@@ -554,7 +562,7 @@ namespace Lumio.Client.Replica
                     return true;
                 }
             }
-            catch (Exception)
+            catch (Exception error) when (error is FormatException or ArgumentException)
             {
             }
 
@@ -562,21 +570,60 @@ namespace Lumio.Client.Replica
             return false;
         }
 
-        private void ApplyRuntimeCommitted(in ReplicaStageRequest request, WorldChangeMessage change)
+        private bool ApplyRuntimeCommitted(in ReplicaStageRequest request, WorldChangeMessage change)
         {
+            if (request.Kind == ReplicaUpdateKind.FullSnapshot && !RecreateManagerForFullSnapshot())
+            {
+                _lastRejectCode = GameplayReject.BadEnvelope;
+                return false;
+            }
+
+            if (!ApplyPack(in change))
+            {
+                _lastRejectCode = GameplayReject.BadEnvelope;
+                return false;
+            }
+
+            if (request.Kind == ReplicaUpdateKind.FullSnapshot
+                && ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId snapshotSelfId)
+                && request.TombstoneEntityIds.Length > 0)
+            {
+                var destroys = new List<DestroyRecord>(request.TombstoneEntityIds.Length);
+                for (int i = 0; i < request.TombstoneEntityIds.Length; i++)
+                {
+                    ulong counter = request.TombstoneEntityIds.Span[i];
+                    if (counter != 0UL)
+                    {
+                        destroys.Add(new DestroyRecord(new NetEntityId(snapshotSelfId.InstanceId, counter), DestroyReason.Terminated));
+                    }
+                }
+
+                if (destroys.Count > 0)
+                {
+                    _manager.Enqueue(new WorldChangeMessage(
+                        change.Tick,
+                        change.AppliedInputSequence,
+                        Array.Empty<CreateRecord>(),
+                        Array.Empty<FieldChange>(),
+                        destroys,
+                        Array.Empty<ClientRpcRecord>()));
+                    _manager.Tick();
+                }
+            }
+
             if (request.Kind == ReplicaUpdateKind.FullSnapshot)
             {
-                RecreateManager();
-                _chat.Clear();
+                _presentation?.Reset();
                 _lastRoomSequence = 0UL;
                 _lastMessageId = 0UL;
                 _replicaGeneration = request.Generation;
             }
 
-            if (!ApplyPack(change.Tick, new List<CreateRecord>(change.Creates), change.Fields, new List<NetEntityId>(change.Destroys), change.Rpcs))
+            if (_hasSelf && ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId selfId)
+                && _manager.World.IsLive(selfId))
             {
-                _lastRejectCode = GameplayReject.BadEnvelope;
-                return;
+                string entityType = _manager.Registry.WireName(_manager.World.TypeOf(selfId).ClrType);
+                _self = new ReplicaBinding(_self.AccountId, _self.RoomId, _self.NetEntityId, entityType, _self.ConnectionGeneration);
             }
 
             for (int i = 0; i < change.Rpcs.Count; i++)
@@ -590,7 +637,8 @@ namespace Lumio.Client.Replica
                     continue;
                 }
 
-                _chat.Add(new ReplicaChatLine(rpc.MessageId, rpc.RoomSequence, rpc.Sender.ToHex(), text, rpc.AppliedTick));
+                ReplicaChatLine line = new ReplicaChatLine(rpc.MessageId, rpc.RoomSequence, rpc.Sender.ToHex(), text, rpc.AppliedTick);
+                _presentation?.Append(in line);
                 _lastRoomSequence = rpc.RoomSequence;
                 _lastMessageId = rpc.MessageId;
             }
@@ -599,6 +647,8 @@ namespace Lumio.Client.Replica
             {
                 _inputEnabled = true;
             }
+
+            return true;
         }
 
         private bool TryRuntimeAttributeQuery(
@@ -717,30 +767,6 @@ namespace Lumio.Client.Replica
             return owner is null
                 || ReferenceEquals(Thread.CurrentThread, owner)
                 || Environment.CurrentManagedThreadId == owner.ManagedThreadId;
-        }
-
-        private ulong ResolveDecodeInstanceId()
-        {
-            if (_manager.World.InstanceId != 0UL)
-            {
-                return _manager.World.InstanceId;
-            }
-
-            return _hasSelf && ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId selfId)
-                ? selfId.InstanceId
-                : 0UL;
-        }
-
-        private ReplicaAdmissionResult RejectAdmission(string code)
-        {
-            _lastRejectCode = code;
-            return new ReplicaAdmissionResult(false, code);
-        }
-
-        private static bool IsEntityType(string entityType)
-        {
-            return string.Equals(entityType, "player", StringComparison.Ordinal)
-                || string.Equals(entityType, "bot", StringComparison.Ordinal);
         }
 
         private static ReplicaAttributeQueryResult RequestError(string code)

@@ -6,6 +6,7 @@ using Lumio.Client.Persistence;
 using Lumio.Client.Prediction;
 using Lumio.Client.Replica;
 using Lumio.Client.Session;
+using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Client.Session.Tests.Support;
 
@@ -15,7 +16,23 @@ internal static class SessionTestBytes
 
     public static readonly byte[] Reject = { 0x5A, 0xC3, 0x0E, 0xF4 };
 
-    public static readonly byte[] Snapshot = Lumio.Client.Replica.ReplicaC1Frames.EmptyFullSnapshot;
+    private static readonly NetEntityId Self = new(7UL, 2UL);
+
+    public static readonly byte[] Welcome = WireCodec.EncodePack(new WelcomeMessage(7UL, Self, 1UL));
+
+    public static readonly byte[] WorldChange = WireCodec.EncodePack(new WorldChangeMessage(
+        1UL,
+        0UL,
+        new[]
+        {
+            new CreateRecord("world", new NetEntityId(7UL, 1UL), Array.Empty<FieldValue>()),
+            new CreateRecord("player", Self, Array.Empty<FieldValue>()),
+        },
+        Array.Empty<FieldChange>(),
+        Array.Empty<DestroyRecord>(),
+        Array.Empty<ClientRpcRecord>()));
+
+    public static readonly byte[] Snapshot = WorldChange;
 
     public static readonly byte[] Gap = { 0x91, 0xA9, 0xB0, 0xC3 };
 }
@@ -27,7 +44,17 @@ internal sealed class SessionHarness
     {
     }
 
+    public SessionHarness(bool runtimeCommitted, IClientOutboundMessageObserver outboundObserver)
+        : this(runtimeCommitted, false, outboundObserver)
+    {
+    }
+
     public SessionHarness(bool runtimeCommitted, bool indeterminate)
+        : this(runtimeCommitted, indeterminate, new NullClientOutboundMessageObserver())
+    {
+    }
+
+    private SessionHarness(bool runtimeCommitted, bool indeterminate, IClientOutboundMessageObserver outboundObserver)
     {
         Connections = new CapturingConnectionFactory();
         Scope = new ImmediateGameplayScopeActivator();
@@ -51,7 +78,8 @@ internal sealed class SessionHarness
             new ClientPredictionFactory(),
             Scope,
             Presentation,
-            new JsonSessionMessageKindMap());
+            new JsonSessionMessageKindMap(),
+            outboundObserver);
         new ClientSessionFactory().Create(in deps, out var session);
         Session = session;
     }
@@ -91,19 +119,110 @@ internal sealed class SessionHarness
         Tick();
         Deliver(SessionTestBytes.Hello);
         Tick();
-        Deliver(SessionTestBytes.Snapshot);
+        Deliver(SessionTestBytes.Welcome);
+        Tick();
+        Deliver(SessionTestBytes.WorldChange);
         Tick();
     }
 
     internal sealed class CapturingConnectionFactory : IClientConnectionFactory
     {
+        private readonly Queue<bool> _sendResults = new();
+
         public LocalEmbeddedLoopback Loopback { get; private set; } = default!;
+
+        public int CreateCount { get; private set; }
+
+        public int StartCount { get; private set; }
+
+        public int CloseCount { get; private set; }
+
+        public bool DisconnectAfterFrameDrain { get; set; }
+
+        public List<byte[]> SendAttempts { get; } = new();
+
+        public void QueueSendResults(params bool[] results)
+        {
+            for (int i = 0; i < results.Length; i++)
+            {
+                _sendResults.Enqueue(results[i]);
+            }
+        }
 
         public ClientConnectionCreateResult Create(in ClientConnectionCreateRequest request, out IClientConnection connection)
         {
-            ClientConnectionCreateResult result = new ClientConnectionFactory().Create(in request, out connection);
+            ClientConnectionCreateResult result = new ClientConnectionFactory().Create(in request, out IClientConnection inner);
             Loopback = result.Loopback;
+            CreateCount++;
+            connection = new CountingConnection(inner, this);
             return result;
+        }
+
+        private sealed class CountingConnection : IClientConnection
+        {
+            private readonly IClientConnection _inner;
+            private readonly CapturingConnectionFactory _owner;
+
+            public CountingConnection(IClientConnection inner, CapturingConnectionFactory owner)
+            {
+                _inner = inner;
+                _owner = owner;
+            }
+
+            public ConnectionGeneration Generation => _inner.Generation;
+
+            public ConnectionCommandResult Start()
+            {
+                _owner.StartCount++;
+                return _inner.Start();
+            }
+
+            public ConnectionSendResult TrySend(in EncodedFrame frame)
+            {
+                _owner.SendAttempts.Add(frame.Bytes.ToArray());
+                if (_owner._sendResults.Count > 0 && !_owner._sendResults.Dequeue())
+                {
+                    return new ConnectionSendResult(false);
+                }
+
+                return _inner.TrySend(in frame);
+            }
+
+            public int DrainEvents(Span<ConnectionEvent> destination)
+            {
+                int count = _inner.DrainEvents(destination);
+                bool hasFrame = false;
+                for (int i = 0; i < count; i++)
+                {
+                    if (destination[i].Kind == ConnectionEventKind.FrameReceived)
+                    {
+                        hasFrame = true;
+                        break;
+                    }
+                }
+
+                if (!_owner.DisconnectAfterFrameDrain || !hasFrame)
+                {
+                    return count;
+                }
+
+                _owner.DisconnectAfterFrameDrain = false;
+                _inner.RequestClose(ConnectionCloseReason.Disconnect);
+                if (count < destination.Length)
+                {
+                    count += _inner.DrainEvents(destination.Slice(count));
+                }
+
+                return count;
+            }
+
+            public ConnectionCommandResult RequestClose(ConnectionCloseReason reason)
+            {
+                _owner.CloseCount++;
+                return _inner.RequestClose(reason);
+            }
+
+            public ClientConnectionSnapshot GetSnapshot() => _inner.GetSnapshot();
         }
     }
 

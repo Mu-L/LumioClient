@@ -7,6 +7,8 @@ using Lumio.Client.Persistence;
 using Lumio.Client.Prediction;
 using Lumio.Client.Replica;
 using Lumio.Client.Session;
+using Lumio.GameRuntime.Ecs;
+using System.Text.Json;
 #if LUMIO_ENGINE_SDK
 using Lumio.Engine.SDK;
 #endif
@@ -19,7 +21,21 @@ public static class FoundationHostCommand
 
     public static readonly byte[] Hello = { 0xA5, 0x3C, 0x91, 0x07, 0xD2, 0x4E, 0xB8, 0x11 };
 
-    public static readonly byte[] Snapshot = ReplicaC1Frames.EmptyFullSnapshot;
+    private static readonly NetEntityId FixtureSelf = new(7UL, 2UL);
+
+    public static readonly byte[] Welcome = WireCodec.EncodePack(new WelcomeMessage(7UL, FixtureSelf, 1UL));
+
+    public static readonly byte[] WorldChange = WireCodec.EncodePack(new WorldChangeMessage(
+        1UL,
+        0UL,
+        new[]
+        {
+            new CreateRecord("WorldEntity", new NetEntityId(7UL, 1UL), Array.Empty<FieldValue>()),
+            new CreateRecord("PlayerEntity", FixtureSelf, Array.Empty<FieldValue>()),
+        },
+        Array.Empty<FieldChange>(),
+        Array.Empty<DestroyRecord>(),
+        Array.Empty<ClientRpcRecord>()));
 
     public static readonly byte[] Gap = { 0x91, 0xA9, 0xB0, 0xC3 };
 
@@ -73,11 +89,13 @@ public static class FoundationHostCommand
             new ClientPredictionFactory(),
             new ImmediateGameplayScopeActivator(),
             new NullPresentationSink(),
-            new FixtureMessageMap());
+            new FixtureMessageMap(),
+            new NullClientOutboundMessageObserver());
         new ClientSessionFactory().Create(in deps, out IClientSession session);
         var hook = new FoundationPeer(connections);
         var host = new HeadlessBotHost(session, new DeterministicBotDriver(), ingress, hook);
-        int code = await host.RunAsync(new BotRunRequest(5, 0), cancellationToken);
+        int code = await Task.FromResult(BotHostOwnerPump.Run(
+            () => host.RunAsync(new BotRunRequest(5, 0), cancellationToken)));
         ClientSessionSnapshot snap = session.GetSnapshot();
         if (snap.State == ClientSessionState.Faulted)
         {
@@ -127,6 +145,7 @@ public static class FoundationHostCommand
         Console.Error.WriteLine("BLOCKED: Lumio.Engine.NativeLoader project was not found.");
         return BlockedExitCode;
 #else
+        Console.SetOut(TextWriter.Null);
         Directory.CreateDirectory(parsed.LogDir);
         string logPath = Path.Combine(parsed.LogDir, "bot-host.ndjson");
         string releaseFlag = Path.Combine(parsed.LogDir, "release.flag");
@@ -142,13 +161,13 @@ public static class FoundationHostCommand
         var bots = new List<ProductionBot>();
         foreach (string account in EnumerateAccounts(parsed.AccountFrom, parsed.AccountTo))
         {
-            bots.Add(CreateProductionBot(parsed.Server, account));
+            bots.Add(CreateProductionBot(parsed.Server, account, logPath));
         }
 
         var residents = new ResidentBot[bots.Count];
         for (int i = 0; i < bots.Count; i++)
         {
-            residents[i] = new ResidentBot(bots[i].AccountId, bots[i].Session);
+            residents[i] = new ResidentBot(bots[i].AccountId, bots[i].Session, bots[i].Evidence);
         }
 
         await BotHostResidentLoop.RunAsync(
@@ -168,18 +187,29 @@ public static class FoundationHostCommand
 #endif
     }
 
-    private static ProductionBot CreateProductionBot(string server, string account)
+    private static ProductionBot CreateProductionBot(string server, string account, string logPath)
     {
         var ingress = new InputSampleIngress(16);
         var options = new ClientEventPipelineOptions(8, 4, TimeSpan.FromSeconds(1));
         new ClientEventPipelineFactory().Create(in options, new InMemoryClientEventSink(8), out var writer);
+        var transportOptions = new WebSocketTransportOptions(
+            WebSocketTransportOptions.DefaultMaxMessageBytes,
+            WebSocketTransportOptions.DefaultReceiveBufferBytes,
+            TimeSpan.FromMinutes(5));
+        byte[] initialFrame = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            connectionId = "c-" + account.ToLowerInvariant(),
+        });
         var endpoint = new ClientEndpoint(
             server,
-            new byte[] { 0x01, 0x02, 0x03, 0x04 },
-            new byte[] { 0x05, 0x06, 0x07, 0x08 },
-            TimeSpan.FromSeconds(10));
+            ReadOnlyMemory<byte>.Empty,
+            ReadOnlyMemory<byte>.Empty,
+            TimeSpan.FromSeconds(10),
+            initialFrame,
+            requiresMvpChannelAuth: false);
+        var evidence = new ProductionChatInputEvidence(logPath, account);
         var deps = new ClientSessionDependencies(
-            new WebSocketClientConnectionFactory(),
+            new WebSocketClientConnectionFactory(transportOptions),
             new ClientHandshakeFactory(),
             new HostCapability(),
             new HelloClassifier(),
@@ -192,11 +222,12 @@ public static class FoundationHostCommand
             new ClientPredictionFactory(),
             new ImmediateGameplayScopeActivator(),
             new NullPresentationSink(),
-            new JsonSessionMessageKindMap());
+            new JsonSessionMessageKindMap(),
+            evidence);
         new ClientSessionFactory().Create(in deps, out IClientSession session);
         session.Login(new SessionConnectRequest(1, endpoint), CancellationToken.None);
         _ = account;
-        return new ProductionBot(account, session);
+        return new ProductionBot(account, session, evidence);
     }
 
     private static IEnumerable<string> EnumerateAccounts(string from, string to)
@@ -241,15 +272,18 @@ public static class FoundationHostCommand
 
     private readonly struct ProductionBot
     {
-        public ProductionBot(string accountId, IClientSession session)
+        public ProductionBot(string accountId, IClientSession session, ProductionChatInputEvidence evidence)
         {
             AccountId = accountId;
             Session = session;
+            Evidence = evidence;
         }
 
         public string AccountId { get; }
 
         public IClientSession Session { get; }
+
+        public ProductionChatInputEvidence Evidence { get; }
     }
 
     internal readonly struct HostArgs
@@ -395,15 +429,19 @@ public static class FoundationHostCommand
             }
             else if (tick == 1)
             {
-                _connections.Loopback.TryDeliverToClient(new EncodedFrame(Snapshot));
+                _connections.Loopback.TryDeliverToClient(new EncodedFrame(Welcome));
             }
             else if (tick == 2)
             {
-                _connections.Loopback.TryDeliverToClient(new EncodedFrame(Gap));
+                _connections.Loopback.TryDeliverToClient(new EncodedFrame(WorldChange));
             }
             else if (tick == 3)
             {
-                _connections.Loopback.TryDeliverToClient(new EncodedFrame(Snapshot));
+                _connections.Loopback.TryDeliverToClient(new EncodedFrame(Gap));
+            }
+            else if (tick == 4)
+            {
+                _connections.Loopback.TryDeliverToClient(new EncodedFrame(WorldChange));
             }
         }
     }
@@ -437,9 +475,14 @@ public static class FoundationHostCommand
     {
         public SessionMessageKind Map(ReadOnlyMemory<byte> frame)
         {
-            if (frame.Span.SequenceEqual(Snapshot))
+            if (frame.Span.SequenceEqual(Welcome))
             {
-                return SessionMessageKind.FullSnapshot;
+                return SessionMessageKind.Welcome;
+            }
+
+            if (frame.Span.SequenceEqual(WorldChange))
+            {
+                return SessionMessageKind.WorldChange;
             }
 
             if (frame.Span.SequenceEqual(Gap))

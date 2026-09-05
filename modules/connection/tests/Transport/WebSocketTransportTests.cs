@@ -158,6 +158,43 @@ public sealed class WebSocketTransportTests
         }
     }
 
+    [Fact]
+    public async Task PlainRoomProfileSkipsMvpSubProtocolAndSendsInitialFrame()
+    {
+        byte[] initialFrame = Ascii("{\"connectionId\":\"c-bot\"}");
+        await using var server = LoopbackWebSocketServer.Start(
+            new LoopbackWebSocketScript { NegotiateSubProtocol = false });
+        var endpoint = new ClientEndpoint(
+            server.Uri,
+            ReadOnlyMemory<byte>.Empty,
+            ReadOnlyMemory<byte>.Empty,
+            TimeSpan.FromSeconds(10),
+            initialFrame,
+            requiresMvpChannelAuth: false);
+        var factory = new WebSocketClientConnectionFactory(LongIdle);
+        var created = factory.Create(
+            new ClientConnectionCreateRequest(1, 64, 32, endpoint),
+            out IClientConnection raw);
+        var connection = (WebSocketClientConnection)raw;
+        using (connection)
+        {
+            Assert.True(created.Succeeded);
+            Assert.True(connection.Start().Succeeded);
+            Assert.True(connection.WaitForOpen(Patience), "plain Room WS 鏈湪鏈熼檺鍐呮墦寮€");
+            Assert.Null(connection.NegotiatedSubProtocol);
+
+            DateTime deadline = DateTime.UtcNow + Patience;
+            while (DateTime.UtcNow < deadline
+                && !server.ReceivedMessages.Any(message => message.SequenceEqual(initialFrame)))
+            {
+                Thread.Sleep(5);
+            }
+
+            Assert.Contains(server.ReceivedMessages, message => message.SequenceEqual(initialFrame));
+            Assert.True(server.RequestSubProtocolHeader is null or "");
+        }
+    }
+
     // ---------- 一 WS 消息 = 一 Envelope ----------
 
     [Fact]

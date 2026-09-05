@@ -13,8 +13,6 @@ namespace Lumio.Client.Replica
 
         IReadOnlyList<WorldMessage> DrainQueries();
 
-        ReplicaAdmissionResult InstallAdmission(in ReplicaAdmission admission);
-
         ReplicaBindingLookup SelfLookup();
 
         ReplicaEntityResolve Resolve(string roomId, string netEntityId, ulong connectionGeneration, bool hasConnectionGeneration);

@@ -6,6 +6,7 @@ using Lumio.Client.Persistence;
 using Lumio.Client.Prediction;
 using Lumio.Client.Replica;
 using Lumio.Client.Session;
+using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Client.IntegrationTests.Support;
 
@@ -15,7 +16,21 @@ internal static class FoundationTestBytes
 
     public static readonly byte[] Reject = { 0x5A, 0xC3, 0x0E, 0xF4 };
 
-    public static readonly byte[] Snapshot = Lumio.Client.Replica.ReplicaC1Frames.EmptyFullSnapshot;
+    private static readonly NetEntityId FixtureSelf = new(7UL, 2UL);
+
+    public static readonly byte[] Welcome = WireCodec.EncodePack(new WelcomeMessage(7UL, FixtureSelf, 1UL));
+
+    public static readonly byte[] Snapshot = WireCodec.EncodePack(new WorldChangeMessage(
+        1UL,
+        0UL,
+        new[]
+        {
+            new CreateRecord("WorldEntity", new NetEntityId(7UL, 1UL), Array.Empty<FieldValue>()),
+            new CreateRecord("PlayerEntity", FixtureSelf, Array.Empty<FieldValue>()),
+        },
+        Array.Empty<FieldChange>(),
+        Array.Empty<DestroyRecord>(),
+        Array.Empty<ClientRpcRecord>()));
 
     public static readonly byte[] Gap = { 0x91, 0xA9, 0xB0, 0xC3 };
 }
@@ -46,7 +61,8 @@ internal sealed class FoundationHarness
             new ClientPredictionFactory(),
             Scope,
             Presentation,
-            new FixtureMessageMap());
+            new FixtureMessageMap(),
+            new NullClientOutboundMessageObserver());
         new ClientSessionFactory().Create(in deps, out var session);
         Session = session;
     }
@@ -86,6 +102,8 @@ internal sealed class FoundationHarness
         Tick();
         Deliver(FoundationTestBytes.Hello);
         Tick();
+        Deliver(FoundationTestBytes.Welcome);
+        Tick();
         Deliver(FoundationTestBytes.Snapshot);
         Tick();
     }
@@ -124,9 +142,14 @@ internal sealed class FoundationHarness
     {
         public SessionMessageKind Map(ReadOnlyMemory<byte> frame)
         {
+            if (frame.Span.SequenceEqual(FoundationTestBytes.Welcome))
+            {
+                return SessionMessageKind.Welcome;
+            }
+
             if (frame.Span.SequenceEqual(FoundationTestBytes.Snapshot))
             {
-                return SessionMessageKind.FullSnapshot;
+                return SessionMessageKind.WorldChange;
             }
 
             if (frame.Span.SequenceEqual(FoundationTestBytes.Gap))

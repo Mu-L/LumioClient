@@ -16,6 +16,11 @@ namespace Lumio.Client.Session
             handshake.Begin(new HandshakeBeginRequest(attempt, generation));
         }
 
+        public void Clear()
+        {
+            Handshake = null!;
+        }
+
         public HandshakeOutcome HandleOpaqueFrame(ReadOnlyMemory<byte> frame)
         {
             if (Handshake == null)

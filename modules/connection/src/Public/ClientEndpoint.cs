@@ -13,11 +13,34 @@ namespace Lumio.Client.Connection
         private static readonly char[] UriTailMarkers = { '?', '#' };
 
         public ClientEndpoint(string uri, ReadOnlyMemory<byte> credential, ReadOnlyMemory<byte> nonce, TimeSpan connectTimeout)
+            : this(uri, credential, nonce, connectTimeout, ReadOnlyMemory<byte>.Empty, true)
+        {
+        }
+
+        public ClientEndpoint(
+            string uri,
+            ReadOnlyMemory<byte> credential,
+            ReadOnlyMemory<byte> nonce,
+            TimeSpan connectTimeout,
+            ReadOnlyMemory<byte> initialFrame)
+            : this(uri, credential, nonce, connectTimeout, initialFrame, true)
+        {
+        }
+
+        public ClientEndpoint(
+            string uri,
+            ReadOnlyMemory<byte> credential,
+            ReadOnlyMemory<byte> nonce,
+            TimeSpan connectTimeout,
+            ReadOnlyMemory<byte> initialFrame,
+            bool requiresMvpChannelAuth)
         {
             Uri = uri ?? string.Empty;
             Credential = credential;
             Nonce = nonce;
             ConnectTimeout = connectTimeout;
+            InitialFrame = initialFrame;
+            RequiresMvpChannelAuth = requiresMvpChannelAuth;
         }
 
         public string Uri { get; }
@@ -27,6 +50,10 @@ namespace Lumio.Client.Connection
         public ReadOnlyMemory<byte> Nonce { get; }
 
         public TimeSpan ConnectTimeout { get; }
+
+        public ReadOnlyMemory<byte> InitialFrame { get; }
+
+        public bool RequiresMvpChannelAuth { get; }
 
         /// <summary>LocalEmbedded 路径不带 endpoint;调用方据此区分环回与远程。</summary>
         public bool IsConfigured
@@ -83,13 +110,13 @@ namespace Lumio.Client.Connection
                 return false;
             }
 
-            if (Credential.IsEmpty)
+            if (RequiresMvpChannelAuth && Credential.IsEmpty)
             {
                 reason = "endpoint credential must not be empty";
                 return false;
             }
 
-            if (Nonce.IsEmpty)
+            if (RequiresMvpChannelAuth && Nonce.IsEmpty)
             {
                 reason = "endpoint nonce must not be empty";
                 return false;

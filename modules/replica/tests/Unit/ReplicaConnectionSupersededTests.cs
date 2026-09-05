@@ -10,7 +10,7 @@ public sealed class ReplicaConnectionSupersededTests
     public void ConnectionSupersededStopsInputRecordsReasonAndDoesNotReconnect()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Bot);
-        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World).Accepted);
+        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.Replica));
         Assert.True(GameplayWireFixtures.CommitJson(
             consumer.Replica,
             ReplicaUpdateKind.FullSnapshot,
@@ -43,7 +43,7 @@ public sealed class ReplicaConnectionSupersededTests
     public void MalformedConnectionSupersededDoesNotStopInput()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
-        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World).Accepted);
+        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.Replica));
         Assert.True(GameplayWireFixtures.CommitEmptySnapshot(consumer.Replica));
         Assert.True(consumer.World.InputEnabled);
 
@@ -57,7 +57,7 @@ public sealed class ReplicaConnectionSupersededTests
     public void DecimalConnectionSupersededIdentityFailsClosed()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
-        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World).Accepted);
+        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.Replica));
         Assert.True(GameplayWireFixtures.CommitEmptySnapshot(consumer.Replica));
 
         byte[] utf8 = Encoding.UTF8.GetBytes(

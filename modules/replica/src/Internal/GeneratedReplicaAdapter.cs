@@ -1,4 +1,5 @@
 using System;
+using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Client.Replica
 {
@@ -13,7 +14,19 @@ namespace Lumio.Client.Replica
                 return false;
             }
 
-            return kind == ReplicaUpdateKind.FullSnapshot || kind == ReplicaUpdateKind.Delta;
+            if (kind != ReplicaUpdateKind.FullSnapshot && kind != ReplicaUpdateKind.Delta)
+            {
+                return false;
+            }
+
+            try
+            {
+                return WireCodec.DecodePack(update.Span) is WorldChangeMessage;
+            }
+            catch (Exception error) when (error is FormatException or ArgumentException)
+            {
+                return false;
+            }
         }
     }
 }

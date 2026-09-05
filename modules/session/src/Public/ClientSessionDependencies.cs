@@ -24,7 +24,8 @@ namespace Lumio.Client.Session
             IClientPredictionFactory predictions,
             IClientGameplayScopeActivator scope,
             IClientPresentationSink presentation,
-            ISessionMessageKindMap messages)
+            ISessionMessageKindMap messages,
+            IClientOutboundMessageObserver outboundObserver)
         {
             Connections = connections;
             Handshakes = handshakes;
@@ -40,6 +41,7 @@ namespace Lumio.Client.Session
             Scope = scope;
             Presentation = presentation;
             Messages = messages;
+            OutboundObserver = outboundObserver;
         }
 
         public IClientConnectionFactory Connections { get; }
@@ -69,5 +71,7 @@ namespace Lumio.Client.Session
         public IClientPresentationSink Presentation { get; }
 
         public ISessionMessageKindMap Messages { get; }
+
+        public IClientOutboundMessageObserver OutboundObserver { get; }
     }
 }

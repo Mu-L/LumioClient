@@ -10,6 +10,7 @@ public sealed class ReplicaSequenceProperties
     {
         var replica = new ClientReplicaFactory().Create();
         replica.ResetForNewSession(new ReplicaResetRequest(2));
+        Assert.True(replica.TryObserveWelcome(Lumio.GameRuntime.Ecs.WireCodec.EncodePack(new Lumio.GameRuntime.Ecs.WelcomeMessage(1, new Lumio.GameRuntime.Ecs.NetEntityId(1, 1), 2))));
         ReplicaStageRequest snapshot = ReplicaRequests.FullSnapshot(2, 40, 1, 1);
         replica.StageAuthority(in snapshot, out ReplicaStageHandle snapshotHandle, out _);
         replica.ObserveRuntimeOutcome(snapshotHandle, ReplicaRuntimeOutcome.CommittedOutcome(), out ReplicaCommittedMetadata watermark);

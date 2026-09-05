@@ -10,6 +10,7 @@ public sealed class ReplicaOutcomeFaultTests
     {
         var replica = new ClientReplicaFactory().Create();
         replica.ResetForNewSession(new ReplicaResetRequest(4));
+        Assert.True(replica.TryObserveWelcome(Lumio.GameRuntime.Ecs.WireCodec.EncodePack(new Lumio.GameRuntime.Ecs.WelcomeMessage(1, new Lumio.GameRuntime.Ecs.NetEntityId(1, 1), 4))));
         ReplicaStageRequest snapshot = ReplicaRequests.FullSnapshot(4, 12, 2, 1);
         replica.StageAuthority(in snapshot, out ReplicaStageHandle handle, out _);
         ReplicaCommittedMetadata before = replica.GetSnapshot().Committed;

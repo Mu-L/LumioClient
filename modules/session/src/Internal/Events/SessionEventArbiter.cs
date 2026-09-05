@@ -40,6 +40,11 @@ namespace Lumio.Client.Session
                 return SessionEventPriority.Gap;
             }
 
+            if (kind == SessionMessageKind.ConnectionSuperseded)
+            {
+                return SessionEventPriority.Superseded;
+            }
+
             return SessionEventPriority.Normal;
         }
     }

@@ -133,7 +133,7 @@ public sealed class HelloBotFlowTests
     {
         string contractPath = LocateContract()!;
         using var contract = HelloContract.Load(contractPath);
-        var script = new HelloServerScript { SendUnknownMessage = true };
+        var script = new HelloServerScript { SendUnknownMessageAfterCommand = true };
         await using var server = HelloLoopbackServer.Start(script, contract);
 
         using RunOutcome run = await RunBotAsync(server, contractPath);

@@ -12,6 +12,7 @@ using Lumio.Client.Prediction;
 using Lumio.Client.Replica;
 using Lumio.Client.Session;
 using Lumio.Client.Session.Tests.Support;
+using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Client.Session.Tests.Unit;
 
@@ -28,11 +29,17 @@ public sealed class SessionConnectionSupersededTests
         harness.HappyPathToActive();
         Assert.Equal(ClientSessionState.Active, harness.Session.GetSnapshot().State);
         ulong generation = harness.Session.GetSnapshot().Generation;
-        byte[] superseded = Encoding.UTF8.GetBytes(
-            "{\"messageType\":\"ConnectionSuperseded\",\"reasonCode\":\"connection_superseded\",\"netEntityId\":101,\"newConnectionGeneration\":2}");
+        byte[] superseded = WireCodec.EncodePack(
+            new ConnectionSupersededMessage(new NetEntityId(7UL, 2UL), 2UL));
         harness.Deliver(superseded);
         harness.Tick();
         Assert.Equal(ClientSessionState.Superseded, harness.Session.GetSnapshot().State);
+        Assert.Equal(1, harness.Connections.CreateCount);
+        Assert.Equal(1, harness.Connections.CloseCount);
+        Assert.Equal(1, harness.Scope.ReleaseCalls);
+        Assert.Equal(0, harness.Session.GetSnapshot().LedgerCount);
+        Assert.Equal(0, harness.Session.GetSnapshot().EcsHandles);
+        Assert.Equal(0, harness.Session.GetSnapshot().VoxelHandles);
         Assert.True(harness.Session.TryDequeueSuperseded(out SessionSupersededNotice notice));
         Assert.Equal("connection_superseded", notice.ReasonCode);
         Assert.False(harness.Session.RequestConnect(new SessionConnectRequest(generation), CancellationToken.None).Succeeded);
@@ -40,19 +47,52 @@ public sealed class SessionConnectionSupersededTests
         Assert.Equal(ClientSessionState.Superseded, harness.Session.GetSnapshot().State);
         Assert.Equal(generation, harness.Session.GetSnapshot().Generation);
         Assert.True(harness.Session.Login(new SessionConnectRequest(generation + 1), CancellationToken.None).Succeeded);
+        Assert.Equal(2, harness.Connections.CreateCount);
+        Assert.Equal(1, harness.Connections.CloseCount);
+        Assert.Equal(1, harness.Scope.ReleaseCalls);
         Assert.True(harness.Session.GetSnapshot().Generation > generation);
         Assert.NotEqual(ClientSessionState.Superseded, harness.Session.GetSnapshot().State);
     }
 
     [Fact]
+    public void CoDrainedSupersededFrameFencesDisconnectWithoutReconnect()
+    {
+        var harness = new SessionHarness(runtimeCommitted: true);
+        harness.HappyPathToActive();
+        harness.Connections.DisconnectAfterFrameDrain = true;
+        byte[] superseded = WireCodec.EncodePack(
+            new ConnectionSupersededMessage(new NetEntityId(7UL, 2UL), 2UL));
+
+        harness.Deliver(superseded);
+        harness.Tick();
+
+        ClientSessionSnapshot snapshot = harness.Session.GetSnapshot();
+        Assert.Equal(ClientSessionState.Superseded, snapshot.State);
+        Assert.Equal(1, harness.Connections.CreateCount);
+        Assert.Equal(1, harness.Connections.CloseCount);
+        Assert.Equal(1, harness.Scope.ReleaseCalls);
+        Assert.Equal(0, snapshot.LedgerCount);
+        Assert.Equal(InputBufferPolicyKind.Drop, harness.Commands.GetSnapshotPolicy().Kind);
+        Assert.Equal(snapshot.Generation, harness.Commands.GetSnapshotPolicy().Generation);
+        Assert.True(harness.Session.TryDequeueSuperseded(out SessionSupersededNotice notice));
+        Assert.Equal("connection_superseded", notice.ReasonCode);
+        Assert.False(harness.Session.TryDequeueSuperseded(out _));
+
+        harness.Session.Tick(new ClientOwnerTick(2));
+        Assert.Equal(ClientSessionState.Superseded, harness.Session.GetSnapshot().State);
+        Assert.Equal(1, harness.Connections.CreateCount);
+    }
+
+    [Fact]
     public async Task ConnectionSupersededStopsAtLoginStateAndDoesNotReconnect()
     {
-        byte[] superseded = Encoding.UTF8.GetBytes(
-            "{\"messageType\":\"ConnectionSuperseded\",\"reasonCode\":\"connection_superseded\",\"netEntityId\":101,\"newConnectionGeneration\":2}");
+        byte[] superseded = WireCodec.EncodePack(
+            new ConnectionSupersededMessage(new NetEntityId(7UL, 2UL), 2UL));
         await using var server = LoopbackSessionServer.Start(new[]
         {
             Hello,
-            ReplicaC1Frames.EmptyFullSnapshot,
+            SessionTestBytes.Welcome,
+            SessionTestBytes.WorldChange,
             superseded
         });
 
@@ -71,7 +111,7 @@ public sealed class SessionConnectionSupersededTests
             }
 
             harness.Session.Tick(new ClientOwnerTick(1));
-            await Task.Delay(20, TestContext.Current.CancellationToken);
+            Thread.Sleep(20);
         }
 
         ClientSessionSnapshot snap = harness.Session.GetSnapshot();
@@ -116,7 +156,8 @@ public sealed class SessionConnectionSupersededTests
                 new ClientPredictionFactory(),
                 new ImmediateGameplayScopeActivator(),
                 new NullPresentationSink(),
-                new JsonSessionMessageKindMap());
+                new JsonSessionMessageKindMap(),
+                new NullClientOutboundMessageObserver());
             new ClientSessionFactory().Create(in deps, out IClientSession session);
             Session = session;
         }

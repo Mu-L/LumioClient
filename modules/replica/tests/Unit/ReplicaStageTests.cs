@@ -10,6 +10,7 @@ public sealed class ReplicaStageTests
         var mapper = new RecordingMapper();
         var replica = new ClientReplicaFactory().Create(mapper);
         replica.ResetForNewSession(new ReplicaResetRequest(1));
+        Assert.True(replica.TryObserveWelcome(Lumio.GameRuntime.Ecs.WireCodec.EncodePack(new Lumio.GameRuntime.Ecs.WelcomeMessage(1, new Lumio.GameRuntime.Ecs.NetEntityId(1, 1), 1))));
         ReplicaCommittedMetadata before = replica.GetSnapshot().Committed;
 
         ReplicaStageResult result = replica.StageAuthority(
@@ -35,6 +36,7 @@ public sealed class ReplicaStageTests
         var mapper = new RecordingMapper();
         var replica = new ClientReplicaFactory().Create(mapper);
         replica.ResetForNewSession(new ReplicaResetRequest(1));
+        Assert.True(replica.TryObserveWelcome(Lumio.GameRuntime.Ecs.WireCodec.EncodePack(new Lumio.GameRuntime.Ecs.WelcomeMessage(1, new Lumio.GameRuntime.Ecs.NetEntityId(1, 1), 1))));
 
         ReplicaStageResult first = replica.StageAuthority(
             ReplicaRequests.FullSnapshot(generation: 1, baseline: 10, toRevision: 1, sequence: 1),
@@ -73,6 +75,7 @@ public sealed class ReplicaStageTests
         var mapper = new RecordingMapper();
         var replica = new ClientReplicaFactory().Create(mapper);
         replica.ResetForNewSession(new ReplicaResetRequest(1));
+        Assert.True(replica.TryObserveWelcome(Lumio.GameRuntime.Ecs.WireCodec.EncodePack(new Lumio.GameRuntime.Ecs.WelcomeMessage(1, new Lumio.GameRuntime.Ecs.NetEntityId(1, 1), 1))));
         Assert.Equal(
             ReplicaStageStatus.Staged,
             replica.StageAuthority(
@@ -159,7 +162,23 @@ internal static class ReplicaRequests
             0,
             toRevision,
             sequence,
-            update ?? System.Text.Encoding.UTF8.GetBytes(Lumio.Client.Replica.ReplicaC1Frames.EmptyFullSnapshotJson),
+            update ?? Lumio.GameRuntime.Ecs.WireCodec.EncodePack(new Lumio.GameRuntime.Ecs.WorldChangeMessage(
+                0,
+                0,
+                new[]
+                {
+                    new Lumio.GameRuntime.Ecs.CreateRecord(
+                        "world",
+                        new Lumio.GameRuntime.Ecs.NetEntityId(1, 2),
+                        Array.Empty<Lumio.GameRuntime.Ecs.FieldValue>()),
+                    new Lumio.GameRuntime.Ecs.CreateRecord(
+                        "player",
+                        new Lumio.GameRuntime.Ecs.NetEntityId(1, 1),
+                        Array.Empty<Lumio.GameRuntime.Ecs.FieldValue>()),
+                },
+                Array.Empty<Lumio.GameRuntime.Ecs.FieldChange>(),
+                Array.Empty<Lumio.GameRuntime.Ecs.DestroyRecord>(),
+                Array.Empty<Lumio.GameRuntime.Ecs.ClientRpcRecord>())),
             tombstones ?? Array.Empty<ulong>(),
             touched ?? Array.Empty<ulong>());
     }
@@ -181,7 +200,13 @@ internal static class ReplicaRequests
             fromRevision,
             toRevision,
             sequence,
-            update ?? System.Text.Encoding.UTF8.GetBytes("{\"messageType\":\"Delta\",\"tickId\":0,\"revision\":0,\"changedBlocks\":[]}"),
+            update ?? Lumio.GameRuntime.Ecs.WireCodec.EncodePack(new Lumio.GameRuntime.Ecs.WorldChangeMessage(
+                0,
+                0,
+                Array.Empty<Lumio.GameRuntime.Ecs.CreateRecord>(),
+                Array.Empty<Lumio.GameRuntime.Ecs.FieldChange>(),
+                Array.Empty<Lumio.GameRuntime.Ecs.DestroyRecord>(),
+                Array.Empty<Lumio.GameRuntime.Ecs.ClientRpcRecord>())),
             tombstones ?? Array.Empty<ulong>(),
             touched ?? Array.Empty<ulong>());
     }

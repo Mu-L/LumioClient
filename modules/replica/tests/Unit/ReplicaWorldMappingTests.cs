@@ -1,3 +1,4 @@
+using System.Text;
 using Lumio.Client.Replica;
 using Lumio.Client.Replica.Tests.Support;
 
@@ -12,8 +13,8 @@ public sealed class ReplicaWorldMappingTests
         ReplicaChatConsumer bot = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Bot);
         Assert.NotSame(browser.Replica, bot.Replica);
         Assert.NotSame(browser.World, bot.World);
-        Assert.True(GameplayWireFixtures.AdmitRoom(browser.World).Accepted);
-        Assert.True(GameplayWireFixtures.AdmitRoom(bot.World, "2", "bot").Accepted);
+        Assert.True(GameplayWireFixtures.AdmitRoom(browser.Replica));
+        Assert.True(GameplayWireFixtures.AdmitRoom(bot.Replica, "2", "bot"));
         Assert.Equal(GameplayWireFixtures.RuntimeId(1), browser.World.SelfLookup().Binding.NetEntityId);
         Assert.Equal(GameplayWireFixtures.RuntimeId(2), bot.World.SelfLookup().Binding.NetEntityId);
         Assert.Equal("bot", bot.World.SelfLookup().Binding.EntityType);
@@ -24,8 +25,8 @@ public sealed class ReplicaWorldMappingTests
     {
         ReplicaChatConsumer browser = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
         Assert.True(GameplayWireFixtures.AdmitRoom(
-            browser.World,
-            extras: new[] { GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 4, 7) }).Accepted);
+            browser.Replica,
+            extras: new[] { GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 4, 7) }));
 
         ReplicaAttributeQueryResult type = browser.World.QueryAttribute(
             new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "IdentityComponent.name"));
@@ -42,14 +43,7 @@ public sealed class ReplicaWorldMappingTests
     public void ForbiddenBindingShapeDoesNotMutateWorld()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
-        var admission = new ReplicaAdmission(
-            new ReplicaBinding("acct-07", "room-01", "1", "player", 1),
-            new[] { GameplayWireFixtures.Entity("1", "player", "room-01", 1, 1, 0) },
-            hasClaim: false,
-            hasForbiddenAccountEntityRef: true);
-        ReplicaAdmissionResult result = consumer.World.InstallAdmission(in admission);
-        Assert.False(result.Accepted);
-        Assert.Equal("invalid_binding_shape", result.RejectCode);
+        Assert.False(consumer.Replica.TryObserveWelcome(Encoding.UTF8.GetBytes("{\"messageType\":\"Welcome\",\"instanceId\":1,\"selfNetEntityId\":\"1\",\"connectionGeneration\":1}")));
         Assert.False(consumer.World.SelfLookup().Found);
         Assert.Equal(0, consumer.World.VisibleEntityCount);
     }
@@ -58,7 +52,7 @@ public sealed class ReplicaWorldMappingTests
     public void EmptyFullSnapshotCommitsThroughAuthorityTransaction()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
-        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World).Accepted);
+        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.Replica));
         Assert.True(GameplayWireFixtures.CommitEmptySnapshot(consumer.Replica));
         ReplicaCommittedMetadata committed = consumer.Replica.GetSnapshot().Committed;
         Assert.True(committed.HasBaseline);

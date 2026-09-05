@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using Lumio.Client.Connection;
 using Lumio.Client.Handshake;
+using Lumio.Client.Input;
 using Lumio.Client.Prediction;
 using Lumio.Client.Replica;
 using Lumio.GameRuntime.Ecs;
@@ -21,11 +22,11 @@ namespace Lumio.Client.Session
         private readonly GameplayScopeActivationGate _scopeGate = new GameplayScopeActivationGate();
         private readonly ClientConfigStagingArea _config = new ClientConfigStagingArea();
         private readonly ActiveMessageGate _messageGate = new ActiveMessageGate();
+        private readonly PendingOutboundInputQueue _pendingOutbound = new PendingOutboundInputQueue();
         private readonly HandshakeOrchestrator _handshakeOrch = new HandshakeOrchestrator();
         private readonly FirstConnectOrchestrator _firstConnect = new FirstConnectOrchestrator();
         private readonly ScopeAndRuntimeActivationOrchestrator _activation = new ScopeAndRuntimeActivationOrchestrator();
         private readonly AuthorityUpdateOrchestrator _authority = new AuthorityUpdateOrchestrator();
-        private readonly LocalPredictionOrchestrator _localPrediction = new LocalPredictionOrchestrator();
         private readonly ResyncOrchestrator _resync = new ResyncOrchestrator();
         private readonly ReconnectOrchestrator _reconnect = new ReconnectOrchestrator();
         private readonly CloseOrchestrator _close = new CloseOrchestrator();
@@ -39,12 +40,12 @@ namespace Lumio.Client.Session
         private bool _baselineAck;
         private bool _presented;
         private int _replicaStages;
-        private int _predictionStages;
         private int _runtimeCalls;
         private int _drainLimit = ClientConnectionCreateRequest.DefaultDrainLimit;
         private ulong _snapshotSequence;
         private ClientEndpoint _endpoint;
         private bool _superseded;
+        private bool _resourcesReleased = true;
         private SessionSupersededNotice _pendingSuperseded;
         private bool _hasPendingSuperseded;
 
@@ -80,6 +81,8 @@ namespace Lumio.Client.Session
                     _terminal.Unfreeze();
                 }
 
+                _superseded = false;
+                _hasPendingSuperseded = false;
                 _endpoint = request.Endpoint;
                 return StartGeneration(request.Generation == 0 ? 1UL : request.Generation);
             }
@@ -97,6 +100,7 @@ namespace Lumio.Client.Session
                     return new SessionCommandResult(false);
                 }
 
+                ReleaseAll();
                 _superseded = false;
                 _hasPendingSuperseded = false;
                 _terminal.Unfreeze();
@@ -139,12 +143,6 @@ namespace Lumio.Client.Session
 
                     if (_machine.State == ClientSessionState.Active && !_superseded)
                     {
-                        _localPrediction.Tick(
-                            _dependencies.Commands,
-                            _prediction,
-                            _dependencies.Runtime,
-                            _connection,
-                            _machine.Generation);
                         DrainReplicaOutbound();
                     }
                 }
@@ -192,7 +190,7 @@ namespace Lumio.Client.Session
                     _baselineAck,
                     _presented,
                     _replicaStages,
-                    _predictionStages,
+                    0,
                     _runtimeCalls,
                     _handshakeOrch.BeginCount,
                     _handles.EcsCount,
@@ -234,12 +232,18 @@ namespace Lumio.Client.Session
 
         private SessionCommandResult StartGeneration(ulong generation)
         {
+            _pendingOutbound.Clear();
+            _scopeGate.Reset();
+            _config.Clear();
+            _bundle.Clear();
+            _messageGate.Reset();
             _generations.Seed(generation);
             _machine.SetGeneration(generation);
             _runtimeCommitted = false;
             _baselineAck = false;
             _presented = false;
             _snapshotSequence = 0;
+            _resourcesReleased = false;
             _machine.TryEnter(ClientSessionState.Connecting);
             var connectionRequest = new ClientConnectionCreateRequest(
                 generation,
@@ -253,6 +257,7 @@ namespace Lumio.Client.Session
             if (!created.Succeeded)
             {
                 _machine.TryEnter(ClientSessionState.Faulted);
+                ReleaseAll();
                 return new SessionCommandResult(false);
             }
 
@@ -308,40 +313,49 @@ namespace Lumio.Client.Session
                 return;
             }
 
-            if (_machine.State == ClientSessionState.Negotiating)
+            SessionMessageKind kind = _dependencies.Messages.Map(evt.Connection.Frame.Bytes);
+            if (_machine.State == ClientSessionState.Negotiating
+                && kind != SessionMessageKind.ConnectionSuperseded)
             {
-                HandshakeOutcome outcome = _handshakeOrch.HandleOpaqueFrame(evt.Connection.Frame.Bytes);
-                if (outcome.Accepted)
+                if (kind == SessionMessageKind.Welcome)
                 {
-                    if (_firstConnect.TryEnterSynchronizing(
-                        outcome,
-                        _config,
-                        _activation,
-                        _dependencies.Scope,
-                        _scopeGate,
-                        _handles,
-                        _machine.Generation))
+                    if (!TryValidateWelcome(evt.Connection.Frame.Bytes, evt.Generation))
                     {
-                        _ledger.Acquire("scope");
-                        _ledger.Acquire("ecs");
-                        _ledger.Acquire("voxel");
-                        _machine.TryEnter(ClientSessionState.Synchronizing);
+                        _terminal.Freeze();
+                        _machine.TryEnter(ClientSessionState.Faulted);
+                        ReleaseAll();
+                        return;
                     }
-                    else
+
+                    if (!TryEnterSynchronizing(new HandshakeOutcome(
+                        HandshakePhase.Accepted,
+                        HandshakeRejectReason.None,
+                        true)))
                     {
                         _machine.TryEnter(ClientSessionState.Faulted);
+                        return;
                     }
                 }
-                else if (outcome.Phase == HandshakePhase.Rejected)
+                else
                 {
-                    _machine.TryEnter(ClientSessionState.Closed);
-                    ReleaseAll();
-                }
+                    HandshakeOutcome outcome = _handshakeOrch.HandleOpaqueFrame(evt.Connection.Frame.Bytes);
+                    if (outcome.Accepted)
+                    {
+                        if (!TryEnterSynchronizing(outcome))
+                        {
+                            _machine.TryEnter(ClientSessionState.Faulted);
+                        }
+                    }
+                    else if (outcome.Phase == HandshakePhase.Rejected)
+                    {
+                        _machine.TryEnter(ClientSessionState.Closed);
+                        ReleaseAll();
+                    }
 
-                return;
+                    return;
+                }
             }
 
-            SessionMessageKind kind = _dependencies.Messages.Map(evt.Connection.Frame.Bytes);
             if (kind == SessionMessageKind.Gap && _machine.State == ClientSessionState.Active)
             {
                 _resync.Enter(_dependencies.Commands, _machine.Generation);
@@ -360,16 +374,80 @@ namespace Lumio.Client.Session
                 return;
             }
 
-            if (kind == SessionMessageKind.FullSnapshot || kind == SessionMessageKind.Delta || kind == SessionMessageKind.AuthorityUpdate)
+            if (kind == SessionMessageKind.Welcome)
             {
-                ApplyAuthority(evt.Connection.Frame.Bytes, kind == SessionMessageKind.FullSnapshot ? ReplicaUpdateKind.FullSnapshot : ReplicaUpdateKind.Delta);
+                if (_replica == null || !_replica.TryObserveWelcome(evt.Connection.Frame.Bytes))
+                {
+                    _machine.TryEnter(ClientSessionState.Faulted);
+                }
+                return;
+            }
+
+            if (kind == SessionMessageKind.Error)
+            {
+                _machine.TryEnter(ClientSessionState.Faulted);
+                return;
+            }
+
+            if (kind == SessionMessageKind.WorldChange || kind == SessionMessageKind.AuthorityUpdate)
+            {
+                ReplicaUpdateKind updateKind = _machine.State == ClientSessionState.Active
+                    ? ReplicaUpdateKind.Delta
+                    : ReplicaUpdateKind.FullSnapshot;
+                ApplyAuthority(evt.Connection.Frame.Bytes, updateKind);
+            }
+        }
+
+        private bool TryEnterSynchronizing(HandshakeOutcome outcome)
+        {
+            if (!_firstConnect.TryEnterSynchronizing(
+                outcome,
+                _config,
+                _activation,
+                _dependencies.Scope,
+                _scopeGate,
+                _handles,
+                _machine.Generation))
+            {
+                return false;
+            }
+
+            _ledger.Acquire("scope");
+            _ledger.Acquire("ecs");
+            _ledger.Acquire("voxel");
+            _machine.TryEnter(ClientSessionState.Synchronizing);
+            return true;
+        }
+
+        private bool TryValidateWelcome(ReadOnlyMemory<byte> frame, ulong eventGeneration)
+        {
+            try
+            {
+                if (WireCodec.DecodePack(frame.Span) is not WelcomeMessage welcome)
+                {
+                    return false;
+                }
+
+                return welcome.InstanceId != 0UL
+                    && !welcome.Self.IsDefault
+                    && welcome.Self.InstanceId == welcome.InstanceId
+                    && welcome.ConnectionGeneration != 0UL
+                    && welcome.ConnectionGeneration == eventGeneration
+                    && welcome.ConnectionGeneration == _machine.Generation;
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
+            catch (ArgumentException)
+            {
+                return false;
             }
         }
 
         private void ApplyAuthority(ReadOnlyMemory<byte> update, ReplicaUpdateKind kind)
         {
             _replicaStages++;
-            _predictionStages++;
             _runtimeCalls++;
             ulong sequence = ++_snapshotSequence;
             bool resyncHint;
@@ -379,7 +457,6 @@ namespace Lumio.Client.Session
             bool indeterminate;
             resyncHint = _authority.TryCommit(
                 _replica,
-                _prediction,
                 _dependencies.Runtime,
                 _dependencies.Presentation,
                 _bundle,
@@ -403,8 +480,11 @@ namespace Lumio.Client.Session
             if (committed)
             {
                 _runtimeCommitted = true;
-                ConnectionSendResult sent = _connection.TrySend(new EncodedFrame(SessionWireBytes.BaselineAck));
-                _baselineAck = sent.Accepted;
+                if (_endpoint.InitialFrame.IsEmpty)
+                {
+                    ConnectionSendResult sent = _connection.TrySend(new EncodedFrame(SessionWireBytes.BaselineAck));
+                    _baselineAck = sent.Accepted;
+                }
                 _presented = presented;
                 _machine.TryEnter(ClientSessionState.Active);
                 return;
@@ -432,17 +512,14 @@ namespace Lumio.Client.Session
             }
 
             _superseded = true;
+            _dependencies.Commands.SetBufferPolicy(new InputBufferPolicy(InputBufferPolicyKind.Drop, _machine.Generation));
             _pendingSuperseded = new SessionSupersededNotice(
                 observed.Received,
                 observed.ReasonCode,
                 observed.NetEntityId,
                 observed.NewConnectionGeneration);
             _hasPendingSuperseded = true;
-            if (_connection != null)
-            {
-                _connection.RequestClose(ConnectionCloseReason.OwnerRequest);
-            }
-
+            ReleaseAll();
             _machine.TryEnter(ClientSessionState.Superseded);
             _terminal.Freeze();
         }
@@ -472,6 +549,12 @@ namespace Lumio.Client.Session
                 return;
             }
 
+            FlushPendingOutbound();
+            if (_machine.State == ClientSessionState.Faulted)
+            {
+                return;
+            }
+
             IReadOnlyList<WorldMessage> outbound;
             try
             {
@@ -490,12 +573,51 @@ namespace Lumio.Client.Session
                     continue;
                 }
 
-                _connection.TrySend(new EncodedFrame(input.Payload));
+                byte[] encoded = WireCodec.EncodeInput(input);
+                if (!_pendingOutbound.TryEnqueue(input, encoded))
+                {
+                    FailOutboundOverflow();
+                    return;
+                }
             }
+
+            FlushPendingOutbound();
+        }
+
+        private void FlushPendingOutbound()
+        {
+            if (_connection == null)
+            {
+                return;
+            }
+
+            while (_pendingOutbound.TryPeek(out PendingOutboundInput pending))
+            {
+                if (!_connection.TrySend(new EncodedFrame(pending.EncodedBytes)).Accepted)
+                {
+                    return;
+                }
+
+                _pendingOutbound.TryDequeue(out pending);
+                _dependencies.OutboundObserver.Observe(pending.Message, pending.EncodedBytes);
+            }
+        }
+
+        private void FailOutboundOverflow()
+        {
+            _terminal.Freeze();
+            _machine.TryEnter(ClientSessionState.Faulted);
+            ReleaseAll();
         }
 
         private void ReleaseAll()
         {
+            if (_resourcesReleased)
+            {
+                return;
+            }
+
+            _resourcesReleased = true;
             _close.Release(
                 _ledger,
                 _handles,
@@ -507,6 +629,13 @@ namespace Lumio.Client.Session
                 _replica,
                 _prediction,
                 _machine.Generation);
+            _handshakeOrch.Clear();
+            _connection = null!;
+            _replica = null!;
+            _prediction = null!;
+            _pendingOutbound.Clear();
+            _config.Clear();
+            _bundle.Clear();
         }
     }
 }
