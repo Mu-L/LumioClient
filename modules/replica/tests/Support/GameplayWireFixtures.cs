@@ -2,11 +2,24 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Lumio.Client.Replica;
+using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Client.Replica.Tests.Support;
 
 internal static class GameplayWireFixtures
 {
+    public static string RuntimeId(ulong counter) => new NetEntityId(0UL, counter).ToHex();
+
+    public static string RuntimeId(string value)
+    {
+        if (NetEntityId.TryParse(value, out _))
+        {
+            return value;
+        }
+
+        return ulong.TryParse(value, out ulong counter) ? RuntimeId(counter) : value;
+    }
+
     public const string ChatEventPayload = "01000000000000000100000000000000000000000000000065000000000000000200000067670700000000000000";
     public const string ChatEventSha256 = "019c19137fdcc3eadf322f67067c254ef33fc2f81a7123bc89253d9a41d0d179";
     public const string ChatInputPayload = "020000006767";
@@ -162,6 +175,7 @@ internal static class GameplayWireFixtures
         string roomId = "room-01",
         ReplicaVisibleEntity[]? extras = null)
     {
+        selfId = RuntimeId(selfId);
         var visible = new List<ReplicaVisibleEntity>
         {
             Entity(selfId, selfType, roomId, generation: 1, revision: 1, tick: 0)
@@ -187,7 +201,7 @@ internal static class GameplayWireFixtures
         bool tombstoned = false)
     {
         return new ReplicaVisibleEntity(
-            netEntityId,
+            RuntimeId(netEntityId),
             entityType,
             roomId,
             generation,

@@ -24,12 +24,12 @@ public sealed class EntityBindingQueryContractTests
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
         ReplicaVisibleEntity bot = GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 1, 0);
-        ReplicaVisibleEntity otherRoom = GameplayWireFixtures.Entity("N7", "player", "room-02", 1, 1, 0);
-        ReplicaVisibleEntity outOfAoi = GameplayWireFixtures.Entity("N5", "player", "room-01", 1, 1, 0, inAoi: false);
+        ReplicaVisibleEntity otherRoom = GameplayWireFixtures.Entity(GameplayWireFixtures.RuntimeId(7), "player", "room-02", 1, 1, 0);
+        ReplicaVisibleEntity outOfAoi = GameplayWireFixtures.Entity(GameplayWireFixtures.RuntimeId(5), "player", "room-01", 1, 1, 0, inAoi: false);
         ReplicaVisibleEntity tombstoned = GameplayWireFixtures.Entity("201", "player", "room-01", 1, 1, 0, tombstoned: true);
         Assert.True(consumer.World.InstallAdmission(
             new ReplicaAdmission(
-                new ReplicaBinding("acct-07", "room-01", "1", "player", 1),
+                new ReplicaBinding("acct-07", "room-01", GameplayWireFixtures.RuntimeId(1), "player", 1),
                 new[]
                 {
                     GameplayWireFixtures.Entity("1", "player", "room-01", 1, 1, 0),
@@ -38,7 +38,7 @@ public sealed class EntityBindingQueryContractTests
                     outOfAoi,
                     tombstoned,
                     new ReplicaVisibleEntity(
-                        "301",
+                        GameplayWireFixtures.RuntimeId(301),
                         "player",
                         "room-01",
                         1,
@@ -50,26 +50,26 @@ public sealed class EntityBindingQueryContractTests
                 })).Accepted);
 
         AssertRequestError(
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "1", "last message text")),
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(1), "last message text")),
             "invalid_attribute_id");
         AssertRequestError(
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "1", "SELECT * FROM entities")),
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(1), "SELECT * FROM entities")),
             "invalid_attribute_id");
         AssertRequestError(
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "1", "Storage.tables.entity_row(42)")),
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(1), "Storage.tables.entity_row(42)")),
             "storage_access_forbidden");
         AssertRequestError(
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "1", "ecs/tables/entity_row")),
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(1), "ecs/tables/entity_row")),
             "storage_access_forbidden");
         AssertRequestError(
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "1", "ChatComponent.notDeclared")),
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(1), "ChatComponent.notDeclared")),
             "undeclared_attribute");
         AssertRequestError(
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "N7", "EntityIdentity.entityType")),
-            "cross_room_reference");
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "N7", "IdentityComponent.name")),
+            "invalid_binding_shape");
         Assert.Equal(
-            ReplicaQueryStatus.Invisible,
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "1", "ChatComponent.lastMessagePersistOnly")).Status);
+            ReplicaQueryStatus.RequestError,
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(1), "ChatComponent.lastMessagePersistOnly")).Status);
         AssertRequestError(
             consumer.World.QueryAttribute(new ReplicaAttributeQuery(
                 "server-authoritative",
@@ -93,20 +93,20 @@ public sealed class EntityBindingQueryContractTests
                 true)),
             "invalid_binding_shape");
         Assert.Equal(
-            ReplicaQueryStatus.NonExistent,
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "N5", "EntityIdentity.entityType")).Status);
+            ReplicaQueryStatus.Tombstoned,
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(5), "IdentityComponent.name")).Status);
         Assert.Equal(
             ReplicaQueryStatus.Tombstoned,
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "201", "EntityIdentity.entityType")).Status);
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(201), "IdentityComponent.name")).Status);
         Assert.Equal(
             ReplicaQueryStatus.Unauthorized,
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "301", "EntityIdentity.claimedMark")).Status);
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(301), "IdentityComponent.realName")).Status);
         Assert.Equal(
-            ReplicaQueryStatus.NonExistent,
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "N9", "EntityIdentity.entityType")).Status);
+            ReplicaQueryStatus.Tombstoned,
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(9), "IdentityComponent.name")).Status);
         Assert.Equal(
             ReplicaQueryStatus.StaleGeneration,
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "1", "EntityIdentity.entityType", 0, true, string.Empty, false)).Status);
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(1), "IdentityComponent.name", 0, true, string.Empty, false)).Status);
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public sealed class EntityBindingQueryContractTests
         Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World, "1", "player").Accepted);
         ReplicaBindingLookup lookup = consumer.World.SelfLookup();
         Assert.True(lookup.Found);
-        Assert.Equal("1", lookup.Binding.NetEntityId);
+        Assert.Equal(GameplayWireFixtures.RuntimeId(1), lookup.Binding.NetEntityId);
         Assert.Equal("player", lookup.Binding.EntityType);
         Assert.Equal(1UL, lookup.Binding.ConnectionGeneration);
         Assert.Equal("room-01", lookup.Binding.RoomId);

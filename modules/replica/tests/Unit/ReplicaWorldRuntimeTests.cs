@@ -10,6 +10,66 @@ namespace Lumio.Client.Replica.Tests.Unit;
 public sealed class ReplicaWorldRuntimeTests
 {
     [Fact]
+    public void ReplicaNetIdsAcceptOnlyRuntimeIssued128BitHex()
+    {
+        Assert.False(ReplicaNetIds.TryParse("101", out _));
+        Assert.False(ReplicaNetIds.TryParse(new NetEntityId(0UL, 0UL).ToHex(), out _));
+        Assert.Equal(
+            "00000000000000010000000000000065",
+            ReplicaNetIds.Format(new NetEntityId(1UL, 101UL)));
+    }
+
+    [Fact]
+    public void ReplicaAdmissionRejectsHostShortIdentity()
+    {
+        ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
+        var admission = new ReplicaAdmission(
+            new ReplicaBinding("acct-07", "room-01", "1", "player", 1),
+            new[] { GameplayWireFixtures.Entity("1", "player", "room-01", 1, 1, 0) });
+
+        ReplicaAdmissionResult result = consumer.World.InstallAdmission(in admission);
+
+        Assert.False(result.Accepted);
+        Assert.Equal("invalid_binding_shape", result.RejectCode);
+    }
+
+    [Fact]
+    public void ReplicaAdmissionPreservesRuntimeIssuedInstanceId()
+    {
+        ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
+        string self = new NetEntityId(7UL, 1UL).ToHex();
+        string bot = new NetEntityId(7UL, 101UL).ToHex();
+        var admission = new ReplicaAdmission(
+            new ReplicaBinding("acct-07", "room-01", self, "player", 1),
+            new[]
+            {
+                GameplayWireFixtures.Entity(self, "player", "room-01", 1, 1, 0),
+                GameplayWireFixtures.Entity(bot, "bot", "room-01", 1, 1, 0)
+            });
+
+        Assert.True(consumer.World.InstallAdmission(in admission).Accepted);
+        Assert.Equal(7UL, consumer.World.Manager.World.InstanceId);
+        Assert.Equal(
+            ReplicaQueryStatus.Ok,
+            consumer.World.QueryAttribute(
+                new ReplicaAttributeQuery("client-replica", "room-01", bot, "IdentityComponent.name")).Status);
+    }
+
+    [Fact]
+    public void ReplicaQueryRejectsMalformedIdentityWithoutLocalFallback()
+    {
+        ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
+        Assert.True(GameplayWireFixtures.AdmitRoom(consumer.World).Accepted);
+
+        ReplicaAttributeQueryResult result = consumer.World.QueryAttribute(
+            new ReplicaAttributeQuery("client-replica", "room-01", "1", "IdentityComponent.name"));
+
+        Assert.Equal(ReplicaQueryStatus.RequestError, result.Status);
+        Assert.Equal("invalid_binding_shape", result.Code);
+        Assert.Empty(result.Value);
+    }
+
+    [Fact]
     public void RuntimeEncodedConnectionSupersededFrameIsDecodedByRuntimeCodec()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
@@ -33,7 +93,7 @@ public sealed class ReplicaWorldRuntimeTests
         consumer.World.Manager.World.Get<IdentityComponent>(id).Name.Value = "bot-name";
 
         ReplicaAttributeQueryResult result = consumer.World.QueryAttribute(
-            new ReplicaAttributeQuery("client-replica", "room-01", "101", "IdentityComponent.name"));
+            new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "IdentityComponent.name"));
 
         Assert.Equal(ReplicaQueryStatus.Ok, result.Status);
         Assert.Equal("bot-name", result.Value);

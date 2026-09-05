@@ -27,13 +27,13 @@ public sealed class ReplicaChatPresentationTests
         Assert.Single(window);
         Assert.Equal(1UL, window[0].MessageId);
         Assert.Equal(1UL, window[0].RoomSequence);
-        Assert.Equal("101", window[0].SenderNetEntityId);
+        Assert.Equal(GameplayWireFixtures.RuntimeId(101), window[0].SenderNetEntityId);
         Assert.Equal("gg", window[0].Text);
         Assert.Equal(7UL, window[0].AppliedTick);
         ReplicaAttributeQueryResult senderType = browser.World.QueryAttribute(
-            new ReplicaAttributeQuery("client-replica", "room-01", window[0].SenderNetEntityId, "EntityIdentity.entityType"));
+            new ReplicaAttributeQuery("client-replica", "room-01", window[0].SenderNetEntityId, "IdentityComponent.name"));
         Assert.Equal(ReplicaQueryStatus.Ok, senderType.Status);
-        Assert.Equal("bot", senderType.Value);
+        Assert.Equal(string.Empty, senderType.Value);
     }
 
     [Fact]
@@ -68,8 +68,8 @@ public sealed class ReplicaChatPresentationTests
             botWindow.Select(line => (line.MessageId, line.RoomSequence)).ToArray());
         Assert.Equal("gg", browserWindow[0].Text);
         Assert.Equal("hi", botWindow[1].Text);
-        Assert.Equal("101", browserWindow[0].SenderNetEntityId);
-        Assert.Equal("101", botWindow[1].SenderNetEntityId);
+        Assert.Equal(GameplayWireFixtures.RuntimeId(101), browserWindow[0].SenderNetEntityId);
+        Assert.Equal(GameplayWireFixtures.RuntimeId(101), botWindow[1].SenderNetEntityId);
     }
 
     [Fact]
@@ -110,20 +110,20 @@ public sealed class ReplicaChatPresentationTests
         Assert.Equal(
             browserWindow.Select(line => (line.MessageId, line.RoomSequence)).ToArray(),
             missingSenderWindow.Select(line => (line.MessageId, line.RoomSequence)).ToArray());
-        Assert.Equal("101", outOfAoiWindow[0].SenderNetEntityId);
-        Assert.Equal("101", missingSenderWindow[1].SenderNetEntityId);
+        Assert.Equal(GameplayWireFixtures.RuntimeId(101), outOfAoiWindow[0].SenderNetEntityId);
+        Assert.Equal(GameplayWireFixtures.RuntimeId(101), missingSenderWindow[1].SenderNetEntityId);
         Assert.Equal(
             ReplicaQueryStatus.Ok,
             browser.World.QueryAttribute(
-                new ReplicaAttributeQuery("client-replica", "room-01", "101", "EntityIdentity.entityType")).Status);
+                new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "IdentityComponent.name")).Status);
         Assert.Equal(
             ReplicaQueryStatus.NonExistent,
             botOutOfAoi.World.QueryAttribute(
-                new ReplicaAttributeQuery("client-replica", "room-01", "101", "EntityIdentity.entityType")).Status);
+                new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "IdentityComponent.name")).Status);
         Assert.Equal(
             ReplicaQueryStatus.NonExistent,
             botWithoutSender.World.QueryAttribute(
-                new ReplicaAttributeQuery("client-replica", "room-01", "101", "EntityIdentity.entityType")).Status);
+                new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "IdentityComponent.name")).Status);
     }
 
     [Fact]

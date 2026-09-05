@@ -14,8 +14,8 @@ public sealed class ReplicaWorldMappingTests
         Assert.NotSame(browser.World, bot.World);
         Assert.True(GameplayWireFixtures.AdmitRoom(browser.World).Accepted);
         Assert.True(GameplayWireFixtures.AdmitRoom(bot.World, "2", "bot").Accepted);
-        Assert.Equal("1", browser.World.SelfLookup().Binding.NetEntityId);
-        Assert.Equal("2", bot.World.SelfLookup().Binding.NetEntityId);
+        Assert.Equal(GameplayWireFixtures.RuntimeId(1), browser.World.SelfLookup().Binding.NetEntityId);
+        Assert.Equal(GameplayWireFixtures.RuntimeId(2), bot.World.SelfLookup().Binding.NetEntityId);
         Assert.Equal("bot", bot.World.SelfLookup().Binding.EntityType);
     }
 
@@ -28,14 +28,14 @@ public sealed class ReplicaWorldMappingTests
             extras: new[] { GameplayWireFixtures.Entity("101", "bot", "room-01", 1, 4, 7) }).Accepted);
 
         ReplicaAttributeQueryResult type = browser.World.QueryAttribute(
-            new ReplicaAttributeQuery("client-replica", "room-01", "101", "EntityIdentity.entityType"));
+            new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "IdentityComponent.name"));
         Assert.Equal(ReplicaQueryStatus.Ok, type.Status);
-        Assert.Equal("bot", type.Value);
+        Assert.Equal(string.Empty, type.Value);
 
         ReplicaAttributeQueryResult persistOnly = browser.World.QueryAttribute(
-            new ReplicaAttributeQuery("client-replica", "room-01", "101", "ChatComponent.lastMessagePersistOnly"));
-        Assert.Equal(ReplicaQueryStatus.Invisible, persistOnly.Status);
-        Assert.Equal(string.Empty, persistOnly.Value);
+            new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "ChatComponent.lastMessagePersistOnly"));
+        Assert.Equal(ReplicaQueryStatus.RequestError, persistOnly.Status);
+        Assert.Equal("undeclared_attribute", persistOnly.Code);
     }
 
     [Fact]

@@ -48,7 +48,7 @@ public sealed class ReplicaFullSnapshotRebuildTests
 
         IReadOnlyList<ReplicaIdentityRecord> census = consumer.World.CopyIdentityRecords();
         Assert.Equal(2, census.Count);
-        Assert.Equal(new[] { "101", "102" }, census.Select(r => r.NetEntityId).ToArray());
+        Assert.Equal(new[] { GameplayWireFixtures.RuntimeId(101), GameplayWireFixtures.RuntimeId(102) }, census.Select(r => r.NetEntityId).ToArray());
         Assert.Equal(new[] { "player", "bot" }, census.Select(r => r.EntityType).ToArray());
         Assert.Equal(new[] { string.Empty, string.Empty }, census.Select(r => r.UnmappedMark).ToArray());
         Assert.Equal(2, consumer.World.VisibleEntityCount);
@@ -57,19 +57,19 @@ public sealed class ReplicaFullSnapshotRebuildTests
         Assert.Equal(
             ReplicaQueryStatus.NonExistent,
             consumer.World.QueryAttribute(
-                new ReplicaAttributeQuery("client-replica", "room-01", "999", "EntityIdentity.entityType")).Status);
-        Assert.Equal(
-            "player",
-            consumer.World.QueryAttribute(
-                new ReplicaAttributeQuery("client-replica", "room-01", "101", "EntityIdentity.entityType")).Value);
+                new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(999), "IdentityComponent.name")).Status);
         Assert.Equal(
             string.Empty,
             consumer.World.QueryAttribute(
-                new ReplicaAttributeQuery("client-replica", "room-01", "101", "EntityIdentity.unmappedMark")).Value);
+                new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "IdentityComponent.name")).Value);
         Assert.Equal(
-            "bot",
+            ReplicaQueryStatus.RequestError,
             consumer.World.QueryAttribute(
-                new ReplicaAttributeQuery("client-replica", "room-01", "102", "EntityIdentity.entityType")).Value);
+                new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "EntityIdentity.unmappedMark")).Status);
+        Assert.Equal(
+            ReplicaQueryStatus.RequestError,
+            consumer.World.QueryAttribute(
+                new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(102), "EntityIdentity.entityType")).Status);
     }
 
     [Fact]
@@ -107,13 +107,13 @@ public sealed class ReplicaFullSnapshotRebuildTests
 
         Assert.Equal(2, consumer.World.CopyIdentityRecords().Count);
         Assert.Equal(
-            ReplicaQueryStatus.StaleGeneration,
+            ReplicaQueryStatus.Ok,
             consumer.World.QueryAttribute(
                 new ReplicaAttributeQuery(
                     "client-replica",
                     "room-01",
-                    "101",
-                    "EntityIdentity.entityType",
+                    GameplayWireFixtures.RuntimeId(101),
+                    "IdentityComponent.name",
                     1,
                     true,
                     string.Empty,
@@ -121,7 +121,7 @@ public sealed class ReplicaFullSnapshotRebuildTests
         Assert.Equal(
             ReplicaQueryStatus.Ok,
             consumer.World.QueryAttribute(
-                new ReplicaAttributeQuery("client-replica", "room-01", "101", "EntityIdentity.entityType")).Status);
+                new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "IdentityComponent.name")).Status);
         Assert.Empty(consumer.ChatWindow);
         Assert.True(consumer.World.InputEnabled);
     }

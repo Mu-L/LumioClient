@@ -1,11 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using Lumio.GameRuntime.Ecs;
-using Lumio.GameRuntime.Ecs.Annotations;
 using Lumio.GameRuntime.Replication.Binding;
 using Lumio.GameRuntime.Samples.Username.Host;
 
@@ -14,11 +11,6 @@ namespace Lumio.Client.Replica
     public sealed class ReplicaWorld : IReplicaWorld
     {
         private const int MaxBindingsPerRoom = 4096;
-        private const int MaxAttributeIdBytes = 128;
-        private static readonly Regex AttributeIdGrammar = new Regex(
-            "^[A-Z][A-Za-z0-9]*\\.[a-z][A-Za-z0-9]*$",
-            RegexOptions.CultureInvariant | RegexOptions.Compiled);
-
         private readonly List<ReplicaChatLine> _chat = new List<ReplicaChatLine>();
         private readonly List<WorldMessage> _deferredFrames = new List<WorldMessage>();
         private readonly List<WorldMessage> _deferredQueries = new List<WorldMessage>();
@@ -57,7 +49,7 @@ namespace Lumio.Client.Replica
                 return Array.Empty<WorldMessage>();
             }
 
-            WorldDrainResponse drained = DrainRuntime();
+            WorldDrainResponse drained = _manager.DrainOutbox();
             AddDeferred(_deferredQueries, drained.Queries);
             if (_deferredFrames.Count == 0)
             {
@@ -78,7 +70,7 @@ namespace Lumio.Client.Replica
                 return new WorldDrainResponse(Array.Empty<WorldMessage>(), Array.Empty<WorldMessage>());
             }
 
-            WorldDrainResponse drained = DrainRuntime();
+            WorldDrainResponse drained = _manager.DrainOutbox();
             var frames = new List<WorldMessage>(_deferredFrames.Count + drained.Frames.Count);
             frames.AddRange(_deferredFrames);
             frames.AddRange(drained.Frames);
@@ -97,7 +89,7 @@ namespace Lumio.Client.Replica
                 return Array.Empty<WorldMessage>();
             }
 
-            WorldDrainResponse drained = DrainRuntime();
+            WorldDrainResponse drained = _manager.DrainOutbox();
             var queries = new List<WorldMessage>(_deferredQueries.Count + drained.Queries.Count);
             queries.AddRange(_deferredQueries);
             queries.AddRange(drained.Queries);
@@ -118,7 +110,7 @@ namespace Lumio.Client.Replica
                 || self.ConnectionGeneration < 1UL
                 || string.IsNullOrEmpty(self.AccountId)
                 || string.IsNullOrEmpty(self.RoomId)
-                || string.IsNullOrEmpty(self.NetEntityId))
+                || !ReplicaNetIds.TryParse(self.NetEntityId, out NetEntityId selfId))
             {
                 return RejectAdmission("invalid_binding_shape");
             }
@@ -131,7 +123,7 @@ namespace Lumio.Client.Replica
 
             var creates = new List<CreateRecord>();
             var destroys = new List<NetEntityId>();
-            ulong instanceId = _manager.World.InstanceId;
+            ulong instanceId = selfId.InstanceId;
             for (int i = 0; i < visible.Length; i++)
             {
                 ReplicaVisibleEntity item = visible[i];
@@ -140,9 +132,18 @@ namespace Lumio.Client.Replica
                     return RejectAdmission("invalid_binding_shape");
                 }
 
-                if (!item.InAoi || !ReplicaNetIds.TryParse(item.NetEntityId, instanceId, out NetEntityId id))
+                if (!item.InAoi)
                 {
                     continue;
+                }
+
+                if (!ReplicaNetIds.TryParse(item.NetEntityId, out NetEntityId id))
+                {
+                    return RejectAdmission("invalid_binding_shape");
+                }
+                if (id.InstanceId != instanceId)
+                {
+                    return RejectAdmission("invalid_binding_shape");
                 }
 
                 creates.Add(new CreateRecord(item.EntityType, id, Array.Empty<FieldValue>()));
@@ -156,7 +157,10 @@ namespace Lumio.Client.Replica
             _hasSelf = true;
             _hasClaim = admission.HasClaim;
             _lastRejectCode = string.Empty;
-            ApplyPack(0UL, creates, Array.Empty<FieldChange>(), destroys, Array.Empty<ClientRpcRecord>(), bindSelf: true);
+            if (!ApplyPack(0UL, creates, Array.Empty<FieldChange>(), destroys, Array.Empty<ClientRpcRecord>()))
+            {
+                return RejectAdmission("runtime_failure");
+            }
             return new ReplicaAdmissionResult(true, string.Empty);
         }
 
@@ -172,27 +176,76 @@ namespace Lumio.Client.Replica
 
         public ReplicaEntityResolve Resolve(string roomId, string netEntityId, ulong connectionGeneration, bool hasConnectionGeneration)
         {
-            ReplicaAttributeQueryResult query = QueryAttribute(new ReplicaAttributeQuery(
-                "client-replica",
+            if (!IsOwnerThread())
+            {
+                return new ReplicaEntityResolve(ReplicaQueryStatus.RequestError, "owner_thread_required", string.Empty, string.Empty, string.Empty, 0UL);
+            }
+
+            string requestId = "client-resolve-" + (++_nextRequestId).ToString(CultureInfo.InvariantCulture);
+            _manager.Enqueue(new ResolveBindingMessage(
+                requestId,
                 roomId ?? string.Empty,
                 netEntityId ?? string.Empty,
-                "EntityIdentity.entityType",
-                connectionGeneration,
-                hasConnectionGeneration,
-                string.Empty,
-                false));
-            if (query.Status == ReplicaQueryStatus.Ok)
+                hasConnectionGeneration ? connectionGeneration : null));
+            _manager.Tick();
+            WorldDrainResponse drained = _manager.DrainOutbox();
+            AddDeferred(_deferredFrames, drained.Frames);
+            ResolveBindingResult? resultRecord = null;
+            for (int i = 0; i < drained.Queries.Count; i++)
             {
+                if (drained.Queries[i] is ResolveBindingResult candidate && string.Equals(candidate.RequestId, requestId, StringComparison.Ordinal))
+                {
+                    resultRecord = candidate;
+                    continue;
+                }
+
+                _deferredQueries.Add(drained.Queries[i]);
+            }
+
+            if (resultRecord is null)
+            {
+                return new ReplicaEntityResolve(ReplicaQueryStatus.RequestError, "runtime_failure", string.Empty, string.Empty, string.Empty, 0UL);
+            }
+
+            ResolveBindingResult runtime = resultRecord;
+            if (runtime.Outcome == "ok")
+            {
+                if (!runtime.Binding.HasValue
+                    || !runtime.ObservedRevision.HasValue
+                    || string.IsNullOrEmpty(runtime.Binding.Value.NetEntityId)
+                    || string.IsNullOrEmpty(runtime.Binding.Value.RoomId)
+                    || string.IsNullOrEmpty(runtime.Binding.Value.EntityType)
+                    || !ReplicaNetIds.TryParse(runtime.Binding.Value.NetEntityId, out _)
+                    || !string.Equals(runtime.Binding.Value.NetEntityId, netEntityId, StringComparison.Ordinal)
+                    || !string.Equals(runtime.Binding.Value.RoomId, roomId, StringComparison.Ordinal))
+                {
+                    return new ReplicaEntityResolve(ReplicaQueryStatus.RequestError, "runtime_failure", string.Empty, string.Empty, string.Empty, 0UL);
+                }
+
                 return new ReplicaEntityResolve(
                     ReplicaQueryStatus.Ok,
                     string.Empty,
-                    query.NetEntityId,
-                    query.RoomId,
-                    query.Value,
-                    query.ObservedRevision);
+                    runtime.Binding.Value.NetEntityId,
+                    runtime.Binding.Value.RoomId,
+                    runtime.Binding.Value.EntityType,
+                    runtime.ObservedRevision.Value);
             }
 
-            return new ReplicaEntityResolve(query.Status, query.Code, string.Empty, string.Empty, string.Empty, 0UL);
+            if (runtime.Outcome == "request_error")
+            {
+                return new ReplicaEntityResolve(
+                    ReplicaQueryStatus.RequestError,
+                    string.IsNullOrEmpty(runtime.Code) ? "runtime_failure" : runtime.Code,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    0UL);
+            }
+
+            ReplicaQueryStatus status = ParseQueryStatus(runtime.Outcome);
+            return status == ReplicaQueryStatus.RequestError
+                ? new ReplicaEntityResolve(ReplicaQueryStatus.RequestError, "runtime_failure", string.Empty, string.Empty, string.Empty, 0UL)
+                : new ReplicaEntityResolve(status, string.Empty, string.Empty, string.Empty, string.Empty, 0UL);
         }
 
         public ReplicaAttributeQueryResult QueryAttribute(in ReplicaAttributeQuery query)
@@ -217,89 +270,9 @@ namespace Lumio.Client.Replica
                 return RequestError("owner_thread_required");
             }
 
-            if (!IsLegacyAttribute(attributeId)
-                && TryRuntimeAttributeQuery(query, callerScope, roomId, netEntityId, attributeId, out ReplicaAttributeQueryResult runtimeResult))
-            {
-                return runtimeResult;
-            }
-
-            if (netEntityId.StartsWith("N7", StringComparison.Ordinal))
-            {
-                return RequestError("cross_room_reference");
-            }
-
-            string attributeCode = ClassifyAttributeId(attributeId);
-            if (attributeCode.Length > 0)
-            {
-                return RequestError(attributeCode);
-            }
-
-            if (!ReplicaNetIds.TryParse(netEntityId, _manager.World.InstanceId, out NetEntityId id))
-            {
-                return Outcome(ReplicaQueryStatus.NonExistent, netEntityId, roomId, attributeId);
-            }
-
-            if (_manager.World.IsTombstoned(id))
-            {
-                return Outcome(ReplicaQueryStatus.Tombstoned, netEntityId, roomId, attributeId);
-            }
-
-            if (!_manager.World.IsLive(id))
-            {
-                return Outcome(ReplicaQueryStatus.NonExistent, netEntityId, roomId, attributeId);
-            }
-
-            if (IsLegacyServerOnlyAttribute(attributeId))
-            {
-                return Outcome(ReplicaQueryStatus.Invisible, netEntityId, roomId, attributeId);
-            }
-
-            if (query.HasConnectionGeneration && query.ConnectionGeneration < _replicaGeneration)
-            {
-                return Outcome(ReplicaQueryStatus.StaleGeneration, netEntityId, roomId, attributeId);
-            }
-
-            if (IsLegacyIdentityAttribute(attributeId))
-            {
-                if (string.Equals(attributeId, "EntityIdentity.claimedMark", StringComparison.Ordinal) && !_hasClaim)
-                {
-                    return Outcome(ReplicaQueryStatus.Unauthorized, netEntityId, roomId, attributeId);
-                }
-
-                return new ReplicaAttributeQueryResult(
-                    ReplicaQueryStatus.Ok,
-                    string.Empty,
-                    netEntityId,
-                    roomId,
-                    attributeId,
-                    ReadAttribute(id, attributeId),
-                    _manager.World.Revision,
-                    _manager.World.Tick);
-            }
-
-            FieldAttributeDeclaration declaration;
-            TryGetDeclaration(attributeId, out declaration);
-            if (string.Equals(declaration.Replication, "not-replicated", StringComparison.Ordinal)
-                || string.Equals(declaration.Visibility, "server-only", StringComparison.Ordinal))
-            {
-                return Outcome(ReplicaQueryStatus.Invisible, netEntityId, roomId, attributeId);
-            }
-
-            if (string.Equals(declaration.Visibility, "claim-scoped", StringComparison.Ordinal) && !_hasClaim)
-            {
-                return Outcome(ReplicaQueryStatus.Unauthorized, netEntityId, roomId, attributeId);
-            }
-
-            string value = ReadAttribute(id, attributeId);
-            return new ReplicaAttributeQueryResult(
-                ReplicaQueryStatus.Ok,
-                string.Empty,
-                netEntityId,
-                roomId,
-                attributeId,
-                value,
-                _manager.World.Revision,
-                _manager.World.Tick);
+            return TryRuntimeAttributeQuery(query, callerScope, roomId, netEntityId, attributeId, out ReplicaAttributeQueryResult runtimeResult)
+                ? runtimeResult
+                : RequestError("runtime_failure");
         }
 
         public IReadOnlyList<ReplicaChatLine> CopyChatWindow()
@@ -438,7 +411,12 @@ namespace Lumio.Client.Replica
             if (request.Kind == ReplicaUpdateKind.FullSnapshot)
             {
                 RecreateManager();
-                instanceId = _manager.World.InstanceId;
+                if (!ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId selfId))
+                {
+                    _lastRejectCode = GameplayReject.BadEnvelope;
+                    return;
+                }
+                instanceId = selfId.InstanceId;
                 _chat.Clear();
                 _lastRoomSequence = 0UL;
                 _lastMessageId = 0UL;
@@ -462,9 +440,10 @@ namespace Lumio.Client.Replica
                 if (block.HasChatEvent)
                 {
                     DecodedChatEvent chat = block.ChatEvent;
-                    if (!ReplicaNetIds.TryParse(chat.SenderNetEntityId, instanceId, out NetEntityId sender))
+                    if (!ReplicaNetIds.TryParse(chat.SenderNetEntityId, out NetEntityId sender))
                     {
-                        sender = new NetEntityId(instanceId, 0UL);
+                        _lastRejectCode = GameplayReject.BadEnvelope;
+                        return;
                     }
 
                     rpcs.Add(new ClientRpcRecord(
@@ -489,13 +468,16 @@ namespace Lumio.Client.Replica
                 destroys.Add(new NetEntityId(instanceId, tombstones[i]));
             }
 
-            ApplyPack(
+            if (!ApplyPack(
                 decoded.TickId,
                 creates,
                 Array.Empty<FieldChange>(),
                 destroys,
-                rpcs,
-                bindSelf: request.Kind == ReplicaUpdateKind.FullSnapshot && _hasSelf);
+                rpcs))
+            {
+                _lastRejectCode = GameplayReject.BadEnvelope;
+                return;
+            }
             for (int i = 0; i < chatLines.Count; i++)
             {
                 _chat.Add(chatLines[i]);
@@ -507,26 +489,25 @@ namespace Lumio.Client.Replica
             }
         }
 
-        private void ApplyPack(
+        private bool ApplyPack(
             ulong tick,
             List<CreateRecord> creates,
             IReadOnlyList<FieldChange> fields,
             List<NetEntityId> destroys,
-            IReadOnlyList<ClientRpcRecord> rpcs,
-            bool bindSelf)
+            IReadOnlyList<ClientRpcRecord> rpcs)
         {
-            if (bindSelf && _hasSelf && ReplicaNetIds.TryParse(_self.NetEntityId, _manager.World.InstanceId, out NetEntityId selfId))
+            if (_hasSelf && ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId selfId))
             {
-                EnqueueRuntimeFrame(new WelcomeMessage(_manager.World.InstanceId, selfId, _self.ConnectionGeneration, "self"));
+                EnqueueRuntimeFrame(new WelcomeMessage(selfId.InstanceId, selfId, _self.ConnectionGeneration, "self"));
             }
-            else if (_manager.World.InstanceId == 0UL)
+            else
             {
-                // Runtime client worlds require a C-1 Welcome before their first WorldChange.
-                EnqueueRuntimeFrame(new WelcomeMessage(0UL, default(NetEntityId), 0UL));
+                return false;
             }
 
             EnqueueRuntimeFrame(new WorldChangeMessage(tick, creates, fields, destroys, rpcs));
             _manager.Tick();
+            return true;
         }
 
         private void RecreateManager()
@@ -552,23 +533,16 @@ namespace Lumio.Client.Replica
             string attributeId,
             out ReplicaAttributeQueryResult result)
         {
-            result = default(ReplicaAttributeQueryResult);
-            if (!ReplicaNetIds.TryParse(netEntityId, _manager.World.InstanceId, out NetEntityId id))
-            {
-                result = Outcome(ReplicaQueryStatus.NonExistent, netEntityId, roomId, attributeId);
-                return true;
-            }
-
             string requestId = "client-attribute-" + (++_nextRequestId).ToString(CultureInfo.InvariantCulture);
             _manager.Enqueue(new AttributeQueryMessage(
                 requestId,
                 callerScope,
                 roomId,
-                id.ToHex(),
+                netEntityId,
                 attributeId,
                 query.HasConnectionGeneration ? query.ConnectionGeneration : null));
             _manager.Tick();
-            WorldDrainResponse drained = DrainRuntime();
+            WorldDrainResponse drained = _manager.DrainOutbox();
             AttributeQueryResult? resultRecord = null;
             AddDeferred(_deferredFrames, drained.Frames);
             foreach (WorldMessage resultMessage in drained.Queries)
@@ -590,32 +564,53 @@ namespace Lumio.Client.Replica
 
             AttributeQueryResult runtime = resultRecord;
 
-            if (runtime.Outcome == "request_error" && runtime.Code == "undeclared_attribute")
-            {
-                return false;
-            }
-
             if (runtime.Outcome == "ok")
             {
+                if (string.IsNullOrEmpty(runtime.NetEntityId)
+                    || string.IsNullOrEmpty(runtime.RoomId)
+                    || string.IsNullOrEmpty(runtime.AttributeId)
+                    || !runtime.ObservedRevision.HasValue
+                    || !runtime.ObservedTick.HasValue
+                    || !ReplicaNetIds.TryParse(runtime.NetEntityId, out _)
+                    || !string.Equals(runtime.NetEntityId, netEntityId, StringComparison.Ordinal)
+                    || !string.Equals(runtime.RoomId, roomId, StringComparison.Ordinal)
+                    || !string.Equals(runtime.AttributeId, attributeId, StringComparison.Ordinal))
+                {
+                    result = RequestError("runtime_failure");
+                    return true;
+                }
+
+                string value = Convert.ToString(runtime.Value, CultureInfo.InvariantCulture);
+                if (value is null)
+                {
+                    result = RequestError("runtime_failure");
+                    return true;
+                }
+
                 result = new ReplicaAttributeQueryResult(
                     ReplicaQueryStatus.Ok,
                     string.Empty,
-                    runtime.NetEntityId ?? id.ToHex(),
-                    runtime.RoomId ?? roomId,
-                    runtime.AttributeId ?? attributeId,
-                    Convert.ToString(runtime.Value, CultureInfo.InvariantCulture) ?? string.Empty,
-                    runtime.ObservedRevision ?? 0UL,
-                    runtime.ObservedTick ?? 0UL);
+                    runtime.NetEntityId,
+                    runtime.RoomId,
+                    runtime.AttributeId,
+                    value,
+                    runtime.ObservedRevision.Value,
+                    runtime.ObservedTick.Value);
                 return true;
             }
 
             if (runtime.Outcome == "request_error")
             {
-                result = RequestError(runtime.Code ?? "runtime_failure");
+                result = string.IsNullOrEmpty(runtime.Code) || string.IsNullOrEmpty(runtime.Detail)
+                    ? RequestError("runtime_failure")
+                    : RequestError(runtime.Code);
                 return true;
             }
 
-            result = Outcome(ParseQueryStatus(runtime.Outcome), netEntityId, roomId, attributeId);
+            ReplicaQueryStatus status = ParseQueryStatus(runtime.Outcome);
+            result = status == ReplicaQueryStatus.RequestError
+                ? RequestError("runtime_failure")
+                : Outcome(status, string.Empty, string.Empty, string.Empty);
             return true;
         }
 
@@ -625,44 +620,6 @@ namespace Lumio.Client.Replica
             {
                 target.Add(source[i]);
             }
-        }
-
-        private WorldDrainResponse DrainRuntime()
-        {
-            object drained = _manager.DrainOutbox();
-            if (drained is WorldDrainResponse response)
-            {
-                return response;
-            }
-
-            if (drained is IReadOnlyList<WorldMessage> frames)
-            {
-                object? value = _manager.GetType().GetMethod("DrainQueries")?.Invoke(_manager, null);
-                IReadOnlyList<WorldMessage> queries = value as IReadOnlyList<WorldMessage> ?? Array.Empty<WorldMessage>();
-                return new WorldDrainResponse(frames, queries);
-            }
-
-            throw new InvalidOperationException("Runtime drain returned an unsupported response.");
-        }
-
-        private static bool IsLegacyAttribute(string attributeId)
-        {
-            return attributeId.StartsWith("EntityIdentity.", StringComparison.Ordinal)
-                || attributeId.StartsWith("ChatComponent.lastMessage", StringComparison.Ordinal);
-        }
-
-        private static bool IsLegacyServerOnlyAttribute(string attributeId)
-        {
-            return string.Equals(attributeId, "ChatComponent.lastMessagePersistOnly", StringComparison.Ordinal)
-                || string.Equals(attributeId, "ChatComponent.lastMessageText", StringComparison.Ordinal)
-                || string.Equals(attributeId, "ChatComponent.lastMessageTick", StringComparison.Ordinal);
-        }
-
-        private static bool IsLegacyIdentityAttribute(string attributeId)
-        {
-            return string.Equals(attributeId, "EntityIdentity.entityType", StringComparison.Ordinal)
-                || string.Equals(attributeId, "EntityIdentity.unmappedMark", StringComparison.Ordinal)
-                || string.Equals(attributeId, "EntityIdentity.claimedMark", StringComparison.Ordinal);
         }
 
         private static ReplicaQueryStatus ParseQueryStatus(string outcome)
@@ -686,42 +643,6 @@ namespace Lumio.Client.Replica
                 || Environment.CurrentManagedThreadId == owner.ManagedThreadId;
         }
 
-        private string ReadAttribute(NetEntityId id, string attributeId)
-        {
-            if (string.Equals(attributeId, "EntityIdentity.entityType", StringComparison.Ordinal))
-            {
-                return _manager.Registry.WireName(_manager.World.TypeOf(id).ClrType);
-            }
-
-            if (string.Equals(attributeId, "EntityIdentity.unmappedMark", StringComparison.Ordinal))
-            {
-                return string.Empty;
-            }
-
-            if (string.Equals(attributeId, "EntityIdentity.claimedMark", StringComparison.Ordinal))
-            {
-                return "mark";
-            }
-
-            int dot = attributeId.IndexOf('.');
-            if (dot <= 0)
-            {
-                return string.Empty;
-            }
-
-            string componentId = attributeId.Substring(0, dot);
-            string fieldId = attributeId.Substring(dot + 1);
-            Component? component = _manager.World.NamedComponent(id, componentId);
-            if (component == null)
-            {
-                return string.Empty;
-            }
-
-            IGeneratedComponent? generated = EcsRegistry.Generated(component);
-            object? value = generated != null ? generated.ReadField(fieldId) : null;
-            return value == null ? string.Empty : Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
-        }
-
         private ReplicaAdmissionResult RejectAdmission(string code)
         {
             _lastRejectCode = code;
@@ -732,61 +653,6 @@ namespace Lumio.Client.Replica
         {
             return string.Equals(entityType, "player", StringComparison.Ordinal)
                 || string.Equals(entityType, "bot", StringComparison.Ordinal);
-        }
-
-        private string ClassifyAttributeId(string attributeId)
-        {
-            if (string.IsNullOrEmpty(attributeId) || Encoding.UTF8.GetByteCount(attributeId) > MaxAttributeIdBytes)
-            {
-                return "invalid_attribute_id";
-            }
-
-            if (attributeId.Contains('(')
-                || attributeId.StartsWith("Storage.", StringComparison.Ordinal)
-                || attributeId.Contains('/')
-                || attributeId.Contains('\\'))
-            {
-                return "storage_access_forbidden";
-            }
-
-            if (!AttributeIdGrammar.IsMatch(attributeId))
-            {
-                return "invalid_attribute_id";
-            }
-
-            if (IsLegacyIdentityAttribute(attributeId) || IsLegacyServerOnlyAttribute(attributeId))
-            {
-                return string.Empty;
-            }
-
-            FieldAttributeDeclaration unused;
-            if (!TryGetDeclaration(attributeId, out unused))
-            {
-                if (IsLegacyServerOnlyAttribute(attributeId))
-                {
-                    return string.Empty;
-                }
-
-                return "undeclared_attribute";
-            }
-
-            return string.Empty;
-        }
-
-        private bool TryGetDeclaration(string attributeId, out FieldAttributeDeclaration declaration)
-        {
-            IReadOnlyList<FieldAttributeDeclaration> rows = _manager.Registry.AttributeDeclarations;
-            for (int i = 0; i < rows.Count; i++)
-            {
-                if (string.Equals(rows[i].AttributeId, attributeId, StringComparison.Ordinal))
-                {
-                    declaration = rows[i];
-                    return true;
-                }
-            }
-
-            declaration = default(FieldAttributeDeclaration);
-            return false;
         }
 
         private static ReplicaAttributeQueryResult RequestError(string code)

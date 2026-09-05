@@ -93,10 +93,10 @@ public sealed class ReplicaMalformedChatTests
         Assert.Single(consumer.ChatWindow);
         Assert.Equal(1UL, consumer.ChatWindow[0].MessageId);
         Assert.Equal(1UL, consumer.ChatWindow[0].RoomSequence);
-        Assert.Equal("101", consumer.ChatWindow[0].SenderNetEntityId);
+        Assert.Equal(GameplayWireFixtures.RuntimeId(101), consumer.ChatWindow[0].SenderNetEntityId);
         Assert.Equal(
             ReplicaQueryStatus.Tombstoned,
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "101", "EntityIdentity.entityType")).Status);
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "IdentityComponent.name")).Status);
     }
 
     [Fact]
@@ -118,10 +118,10 @@ public sealed class ReplicaMalformedChatTests
         Assert.Single(consumer.ChatWindow);
         Assert.Equal(1UL, consumer.ChatWindow[0].MessageId);
         Assert.Equal(1UL, consumer.ChatWindow[0].RoomSequence);
-        Assert.Equal("101", consumer.ChatWindow[0].SenderNetEntityId);
+        Assert.Equal(GameplayWireFixtures.RuntimeId(101), consumer.ChatWindow[0].SenderNetEntityId);
         Assert.Equal(
             ReplicaQueryStatus.NonExistent,
-            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", "101", "EntityIdentity.entityType")).Status);
+            consumer.World.QueryAttribute(new ReplicaAttributeQuery("client-replica", "room-01", GameplayWireFixtures.RuntimeId(101), "IdentityComponent.name")).Status);
     }
 
     private static void AssertRejected(

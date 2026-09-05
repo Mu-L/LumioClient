@@ -284,7 +284,7 @@ namespace Lumio.Client.Replica
             notice = new ReplicaConnectionSuperseded(
                 true,
                 reasonCode,
-                netEntityId.ToString(CultureInfo.InvariantCulture),
+                ReplicaNetIds.Format(new Lumio.GameRuntime.Ecs.NetEntityId(0UL, netEntityId)),
                 newConnectionGeneration);
             rejectCode = string.Empty;
             return true;

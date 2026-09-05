@@ -26,7 +26,7 @@ public sealed class ReplicaConnectionSupersededTests
         Assert.True(consumer.Replica.TryObserveConnectionSuperseded(utf8, out ReplicaConnectionSuperseded notice));
         Assert.True(notice.Received);
         Assert.Equal("connection_superseded", notice.ReasonCode);
-        Assert.Equal("101", notice.NetEntityId);
+        Assert.Equal(GameplayWireFixtures.RuntimeId(101), notice.NetEntityId);
         Assert.Equal(2UL, notice.NewConnectionGeneration);
         Assert.False(consumer.World.InputEnabled);
         Assert.Equal("connection_superseded", consumer.World.LastConnectionSuperseded.ReasonCode);
