@@ -285,6 +285,15 @@ internal sealed class HelloLoopbackServer : IAsyncDisposable
             }
         }
 
+        if (_script.SendUnknownMessageAfterCommand)
+        {
+            await SendJsonAsync(socket, new Dictionary<string, object?>
+            {
+                ["messageType"] = "Nope",
+                ["foo"] = 1L,
+            }, ct).ConfigureAwait(false);
+        }
+
         if (_script.CloseAfterCommand && commands > 0)
         {
             await Task.Delay(_script.CloseDelayMs, ct).ConfigureAwait(false);
@@ -555,6 +564,8 @@ internal sealed class HelloServerScript
     public bool SendDuplicateRevisionDelta { get; set; }
 
     public bool SendUnknownMessage { get; set; }
+
+    public bool SendUnknownMessageAfterCommand { get; set; }
 
     public bool SendError { get; set; }
 
