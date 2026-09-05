@@ -143,6 +143,7 @@ public static class FoundationHostCommand
         Console.Error.WriteLine("BLOCKED: Lumio.Engine.NativeLoader project was not found.");
         return BlockedExitCode;
 #else
+        Console.SetOut(TextWriter.Null);
         Directory.CreateDirectory(parsed.LogDir);
         string logPath = Path.Combine(parsed.LogDir, "bot-host.ndjson");
         string releaseFlag = Path.Combine(parsed.LogDir, "release.flag");
