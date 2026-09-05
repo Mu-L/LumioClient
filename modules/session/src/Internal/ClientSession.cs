@@ -21,6 +21,7 @@ namespace Lumio.Client.Session
         private readonly GameplayScopeActivationGate _scopeGate = new GameplayScopeActivationGate();
         private readonly ClientConfigStagingArea _config = new ClientConfigStagingArea();
         private readonly ActiveMessageGate _messageGate = new ActiveMessageGate();
+        private readonly PendingOutboundInputQueue _pendingOutbound = new PendingOutboundInputQueue();
         private readonly HandshakeOrchestrator _handshakeOrch = new HandshakeOrchestrator();
         private readonly FirstConnectOrchestrator _firstConnect = new FirstConnectOrchestrator();
         private readonly ScopeAndRuntimeActivationOrchestrator _activation = new ScopeAndRuntimeActivationOrchestrator();
@@ -45,6 +46,7 @@ namespace Lumio.Client.Session
         private ulong _snapshotSequence;
         private ClientEndpoint _endpoint;
         private bool _superseded;
+        private bool _resourcesReleased = true;
         private SessionSupersededNotice _pendingSuperseded;
         private bool _hasPendingSuperseded;
 
@@ -80,6 +82,8 @@ namespace Lumio.Client.Session
                     _terminal.Unfreeze();
                 }
 
+                _superseded = false;
+                _hasPendingSuperseded = false;
                 _endpoint = request.Endpoint;
                 return StartGeneration(request.Generation == 0 ? 1UL : request.Generation);
             }
@@ -97,6 +101,7 @@ namespace Lumio.Client.Session
                     return new SessionCommandResult(false);
                 }
 
+                ReleaseAll();
                 _superseded = false;
                 _hasPendingSuperseded = false;
                 _terminal.Unfreeze();
@@ -234,12 +239,18 @@ namespace Lumio.Client.Session
 
         private SessionCommandResult StartGeneration(ulong generation)
         {
+            _pendingOutbound.Clear();
+            _scopeGate.Reset();
+            _config.Clear();
+            _bundle.Clear();
+            _messageGate.Reset();
             _generations.Seed(generation);
             _machine.SetGeneration(generation);
             _runtimeCommitted = false;
             _baselineAck = false;
             _presented = false;
             _snapshotSequence = 0;
+            _resourcesReleased = false;
             _machine.TryEnter(ClientSessionState.Connecting);
             var connectionRequest = new ClientConnectionCreateRequest(
                 generation,
@@ -253,6 +264,7 @@ namespace Lumio.Client.Session
             if (!created.Succeeded)
             {
                 _machine.TryEnter(ClientSessionState.Faulted);
+                ReleaseAll();
                 return new SessionCommandResult(false);
             }
 
@@ -480,11 +492,7 @@ namespace Lumio.Client.Session
                 observed.NetEntityId,
                 observed.NewConnectionGeneration);
             _hasPendingSuperseded = true;
-            if (_connection != null)
-            {
-                _connection.RequestClose(ConnectionCloseReason.OwnerRequest);
-            }
-
+            ReleaseAll();
             _machine.TryEnter(ClientSessionState.Superseded);
             _terminal.Freeze();
         }
@@ -514,6 +522,12 @@ namespace Lumio.Client.Session
                 return;
             }
 
+            FlushPendingOutbound();
+            if (_machine.State == ClientSessionState.Faulted)
+            {
+                return;
+            }
+
             IReadOnlyList<WorldMessage> outbound;
             try
             {
@@ -533,15 +547,50 @@ namespace Lumio.Client.Session
                 }
 
                 byte[] encoded = WireCodec.EncodeInput(input);
-                if (_connection.TrySend(new EncodedFrame(encoded)).Accepted)
+                if (!_pendingOutbound.TryEnqueue(input, encoded))
                 {
-                    _dependencies.OutboundObserver.Observe(input, encoded);
+                    FailOutboundOverflow();
+                    return;
                 }
             }
+
+            FlushPendingOutbound();
+        }
+
+        private void FlushPendingOutbound()
+        {
+            if (_connection == null)
+            {
+                return;
+            }
+
+            while (_pendingOutbound.TryPeek(out PendingOutboundInput pending))
+            {
+                if (!_connection.TrySend(new EncodedFrame(pending.EncodedBytes)).Accepted)
+                {
+                    return;
+                }
+
+                _pendingOutbound.TryDequeue(out pending);
+                _dependencies.OutboundObserver.Observe(pending.Message, pending.EncodedBytes);
+            }
+        }
+
+        private void FailOutboundOverflow()
+        {
+            _terminal.Freeze();
+            _machine.TryEnter(ClientSessionState.Faulted);
+            ReleaseAll();
         }
 
         private void ReleaseAll()
         {
+            if (_resourcesReleased)
+            {
+                return;
+            }
+
+            _resourcesReleased = true;
             _close.Release(
                 _ledger,
                 _handles,
@@ -553,6 +602,13 @@ namespace Lumio.Client.Session
                 _replica,
                 _prediction,
                 _machine.Generation);
+            _handshakeOrch.Clear();
+            _connection = null!;
+            _replica = null!;
+            _prediction = null!;
+            _pendingOutbound.Clear();
+            _config.Clear();
+            _bundle.Clear();
         }
     }
 }

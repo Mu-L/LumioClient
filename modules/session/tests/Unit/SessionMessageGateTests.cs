@@ -27,9 +27,10 @@ public sealed class SessionMessageGateTests
             map.Map(Lumio.GameRuntime.Ecs.WireCodec.EncodePack(
                 new Lumio.GameRuntime.Ecs.WorldChangeMessage(
                     1,
+                    0,
                     Array.Empty<Lumio.GameRuntime.Ecs.CreateRecord>(),
                     Array.Empty<Lumio.GameRuntime.Ecs.FieldChange>(),
-                    Array.Empty<Lumio.GameRuntime.Ecs.NetEntityId>(),
+                    Array.Empty<Lumio.GameRuntime.Ecs.DestroyRecord>(),
                     Array.Empty<Lumio.GameRuntime.Ecs.ClientRpcRecord>()))));
         Assert.Equal(
             SessionMessageKind.ConnectionSuperseded,

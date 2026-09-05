@@ -6,6 +6,11 @@ namespace Lumio.Client.Session
     {
         public int RejectedCalls { get; private set; }
 
+        public void Reset()
+        {
+            RejectedCalls = 0;
+        }
+
         public bool Allow(ClientSessionState state, ulong eventGeneration, ulong sessionGeneration, SessionMessageKind kind)
         {
             if (eventGeneration != sessionGeneration)

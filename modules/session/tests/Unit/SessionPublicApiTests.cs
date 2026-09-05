@@ -89,6 +89,81 @@ public sealed class SessionPublicApiTests
         Assert.Equal(observed.Message.Payload.ToArray(), decoded.Payload.ToArray());
     }
 
+    [Fact]
+    public void OutboundFalseThenTrueRetriesIdenticalBytesAndObservesOnce()
+    {
+        var observer = new RecordingOutboundObserver();
+        var harness = new SessionHarness(true, observer);
+        harness.HappyPathToActive();
+        harness.Connections.SendAttempts.Clear();
+        harness.Connections.QueueSendResults(false, true);
+
+        Assert.True(harness.Session.TryGetReplicaWorld(out var world));
+        world.Manager.World.Self.Get<ChatComponent>().SendMessage("retry-once");
+        world.Manager.Tick();
+
+        harness.Tick();
+        Assert.Empty(observer.Records);
+        harness.Tick();
+
+        Assert.Single(observer.Records);
+        Assert.Equal(2, harness.Connections.SendAttempts.Count);
+        Assert.Equal(harness.Connections.SendAttempts[0], harness.Connections.SendAttempts[1]);
+    }
+
+    [Fact]
+    public void OutboundPendingInputsRemainOrderedAcrossBackpressure()
+    {
+        var observer = new RecordingOutboundObserver();
+        var harness = new SessionHarness(true, observer);
+        harness.HappyPathToActive();
+        harness.Connections.SendAttempts.Clear();
+        harness.Connections.QueueSendResults(false, true, true);
+
+        Assert.True(harness.Session.TryGetReplicaWorld(out var world));
+        ChatComponent chat = world.Manager.World.Self.Get<ChatComponent>();
+        chat.SendMessage("retry-first");
+        chat.SendMessage("retry-second");
+        world.Manager.Tick();
+
+        harness.Tick();
+        Assert.Empty(observer.Records);
+        harness.Tick();
+
+        Assert.Equal(2, observer.Records.Count);
+        Assert.Equal(1UL, observer.Records[0].Message.Sequence);
+        Assert.Equal(2UL, observer.Records[1].Message.Sequence);
+        Assert.Equal(3, harness.Connections.SendAttempts.Count);
+        Assert.Equal(harness.Connections.SendAttempts[0], harness.Connections.SendAttempts[1]);
+        Assert.Equal(observer.Records[0].EncodedBytes, harness.Connections.SendAttempts[1]);
+        Assert.Equal(observer.Records[1].EncodedBytes, harness.Connections.SendAttempts[2]);
+    }
+
+    [Fact]
+    public void OutboundPendingQueueOverflowFaultsWithoutSilentDrop()
+    {
+        var observer = new RecordingOutboundObserver();
+        var harness = new SessionHarness(true, observer);
+        harness.HappyPathToActive();
+        harness.Connections.SendAttempts.Clear();
+        harness.Connections.QueueSendResults(Enumerable.Repeat(false, 65).ToArray());
+
+        Assert.True(harness.Session.TryGetReplicaWorld(out var world));
+        ChatComponent chat = world.Manager.World.Self.Get<ChatComponent>();
+        for (int i = 0; i < 65; i++)
+        {
+            chat.SendMessage("overflow-" + i.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        world.Manager.Tick();
+        harness.Tick();
+
+        Assert.Equal(ClientSessionState.Faulted, harness.Session.GetSnapshot().State);
+        Assert.Empty(observer.Records);
+        Assert.Equal(1, harness.Connections.CloseCount);
+        Assert.Equal(0, harness.Session.GetSnapshot().LedgerCount);
+    }
+
     private sealed class RecordingOutboundObserver : IClientOutboundMessageObserver
     {
         public List<OutboundRecord> Records { get; } = new();

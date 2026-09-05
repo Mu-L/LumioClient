@@ -22,13 +22,14 @@ internal static class SessionTestBytes
 
     public static readonly byte[] WorldChange = WireCodec.EncodePack(new WorldChangeMessage(
         1UL,
+        0UL,
         new[]
         {
             new CreateRecord("WorldEntity", new NetEntityId(7UL, 1UL), Array.Empty<FieldValue>()),
             new CreateRecord("PlayerEntity", Self, Array.Empty<FieldValue>()),
         },
         Array.Empty<FieldChange>(),
-        Array.Empty<NetEntityId>(),
+        Array.Empty<DestroyRecord>(),
         Array.Empty<ClientRpcRecord>()));
 
     public static readonly byte[] Snapshot = WorldChange;
@@ -126,13 +127,74 @@ internal sealed class SessionHarness
 
     internal sealed class CapturingConnectionFactory : IClientConnectionFactory
     {
+        private readonly Queue<bool> _sendResults = new();
+
         public LocalEmbeddedLoopback Loopback { get; private set; } = default!;
+
+        public int CreateCount { get; private set; }
+
+        public int StartCount { get; private set; }
+
+        public int CloseCount { get; private set; }
+
+        public List<byte[]> SendAttempts { get; } = new();
+
+        public void QueueSendResults(params bool[] results)
+        {
+            for (int i = 0; i < results.Length; i++)
+            {
+                _sendResults.Enqueue(results[i]);
+            }
+        }
 
         public ClientConnectionCreateResult Create(in ClientConnectionCreateRequest request, out IClientConnection connection)
         {
-            ClientConnectionCreateResult result = new ClientConnectionFactory().Create(in request, out connection);
+            ClientConnectionCreateResult result = new ClientConnectionFactory().Create(in request, out IClientConnection inner);
             Loopback = result.Loopback;
+            CreateCount++;
+            connection = new CountingConnection(inner, this);
             return result;
+        }
+
+        private sealed class CountingConnection : IClientConnection
+        {
+            private readonly IClientConnection _inner;
+            private readonly CapturingConnectionFactory _owner;
+
+            public CountingConnection(IClientConnection inner, CapturingConnectionFactory owner)
+            {
+                _inner = inner;
+                _owner = owner;
+            }
+
+            public ConnectionGeneration Generation => _inner.Generation;
+
+            public ConnectionCommandResult Start()
+            {
+                _owner.StartCount++;
+                return _inner.Start();
+            }
+
+            public ConnectionSendResult TrySend(in EncodedFrame frame)
+            {
+                _owner.SendAttempts.Add(frame.Bytes.ToArray());
+                if (_owner._sendResults.Count > 0 && !_owner._sendResults.Dequeue())
+                {
+                    return new ConnectionSendResult(false);
+                }
+
+                return _inner.TrySend(in frame);
+            }
+
+            public int DrainEvents(Span<ConnectionEvent> destination) => _inner.DrainEvents(destination);
+
+            public ConnectionCommandResult RequestClose(ConnectionCloseReason reason)
+            {
+                _owner.CloseCount++;
+                return _inner.RequestClose(reason);
+            }
+
+            public ClientConnectionSnapshot GetSnapshot() => _inner.GetSnapshot();
         }
     }
 

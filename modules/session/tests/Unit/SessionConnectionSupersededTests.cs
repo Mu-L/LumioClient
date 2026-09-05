@@ -34,6 +34,12 @@ public sealed class SessionConnectionSupersededTests
         harness.Deliver(superseded);
         harness.Tick();
         Assert.Equal(ClientSessionState.Superseded, harness.Session.GetSnapshot().State);
+        Assert.Equal(1, harness.Connections.CreateCount);
+        Assert.Equal(1, harness.Connections.CloseCount);
+        Assert.Equal(1, harness.Scope.ReleaseCalls);
+        Assert.Equal(0, harness.Session.GetSnapshot().LedgerCount);
+        Assert.Equal(0, harness.Session.GetSnapshot().EcsHandles);
+        Assert.Equal(0, harness.Session.GetSnapshot().VoxelHandles);
         Assert.True(harness.Session.TryDequeueSuperseded(out SessionSupersededNotice notice));
         Assert.Equal("connection_superseded", notice.ReasonCode);
         Assert.False(harness.Session.RequestConnect(new SessionConnectRequest(generation), CancellationToken.None).Succeeded);
@@ -41,6 +47,9 @@ public sealed class SessionConnectionSupersededTests
         Assert.Equal(ClientSessionState.Superseded, harness.Session.GetSnapshot().State);
         Assert.Equal(generation, harness.Session.GetSnapshot().Generation);
         Assert.True(harness.Session.Login(new SessionConnectRequest(generation + 1), CancellationToken.None).Succeeded);
+        Assert.Equal(2, harness.Connections.CreateCount);
+        Assert.Equal(1, harness.Connections.CloseCount);
+        Assert.Equal(1, harness.Scope.ReleaseCalls);
         Assert.True(harness.Session.GetSnapshot().Generation > generation);
         Assert.NotEqual(ClientSessionState.Superseded, harness.Session.GetSnapshot().State);
     }
