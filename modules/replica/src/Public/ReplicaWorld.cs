@@ -381,21 +381,32 @@ namespace Lumio.Client.Replica
                     _lastRejectCode = rejectCode;
                     return false;
                 }
+
+                lastRoomSequence = rpc.RoomSequence;
+                lastMessageId = rpc.MessageId;
             }
 
             _lastRejectCode = string.Empty;
             return true;
         }
 
-        internal void ApplyCommitted(in ReplicaStageRequest request)
+        internal bool ApplyCommitted(in ReplicaStageRequest request, WorldChangeMessage change)
         {
-            if (TryDecodeRuntimeWorldChange(request.Update, out WorldChangeMessage runtimeChange))
+            if (!TryValidateRuntimeChange(change))
             {
-                ApplyRuntimeCommitted(in request, runtimeChange);
-                return;
+                _lastRejectCode = GameplayReject.BadEnvelope;
+                return false;
             }
 
-            _lastRejectCode = GameplayReject.BadEnvelope;
+            try
+            {
+                return ApplyRuntimeCommitted(in request, change);
+            }
+            catch (Exception)
+            {
+                _lastRejectCode = GameplayReject.BadEnvelope;
+                return false;
+            }
         }
 
         private bool ApplyPack(in WorldChangeMessage change)
@@ -405,8 +416,37 @@ namespace Lumio.Client.Replica
                 return false;
             }
 
-            _manager.Enqueue(change);
-            _manager.Tick();
+            try
+            {
+                _manager.Enqueue(change);
+                _manager.Tick();
+                return true;
+            }
+            catch (Exception)
+            {
+                _lastRejectCode = GameplayReject.BadEnvelope;
+                return false;
+            }
+        }
+
+        private bool TryValidateRuntimeChange(WorldChangeMessage change)
+        {
+            if (change is null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < change.Creates.Count; i++)
+            {
+                CreateRecord create = change.Creates[i];
+                if (create.NetEntityId.IsDefault
+                    || string.IsNullOrEmpty(create.EntityType)
+                    || !_manager.Registry.TryResolveEntityType(create.EntityType, out _))
+                {
+                    return false;
+                }
+            }
+
             return true;
         }
 
@@ -438,20 +478,20 @@ namespace Lumio.Client.Replica
             return false;
         }
 
-        private void ApplyRuntimeCommitted(in ReplicaStageRequest request, WorldChangeMessage change)
+        private bool ApplyRuntimeCommitted(in ReplicaStageRequest request, WorldChangeMessage change)
         {
+            if (!ApplyPack(in change))
+            {
+                _lastRejectCode = GameplayReject.BadEnvelope;
+                return false;
+            }
+
             if (request.Kind == ReplicaUpdateKind.FullSnapshot)
             {
                 _chat.Clear();
                 _lastRoomSequence = 0UL;
                 _lastMessageId = 0UL;
                 _replicaGeneration = request.Generation;
-            }
-
-            if (!ApplyPack(in change))
-            {
-                _lastRejectCode = GameplayReject.BadEnvelope;
-                return;
             }
 
             if (_hasSelf && ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId selfId)
@@ -481,6 +521,8 @@ namespace Lumio.Client.Replica
             {
                 _inputEnabled = true;
             }
+
+            return true;
         }
 
         private bool TryRuntimeAttributeQuery(

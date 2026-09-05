@@ -119,8 +119,13 @@ namespace Lumio.Client.Replica
                 return ReplicaOutcomeStatus.Rejected;
             }
 
+            if (!_world.ApplyCommitted(in staged, change))
+            {
+                committedMetadata = _metadata.ToCommittedMetadata();
+                return ReplicaOutcomeStatus.Rejected;
+            }
+
             _metadata.ApplyCommitted(in staged);
-            _world.ApplyCommitted(in staged);
 
             var terminalCounters = new System.Collections.Generic.List<ulong>();
             for (int i = 0; i < change.Destroys.Count; i++)
