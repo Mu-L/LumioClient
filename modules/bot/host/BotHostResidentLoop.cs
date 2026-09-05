@@ -57,6 +57,7 @@ internal sealed class ProductionChatInputEvidence : IClientOutboundMessageObserv
 internal static class BotHostResidentLoop
 {
     private const int CadenceBatchCount = 3;
+    private const ulong AcceptanceCadenceEndTick = ClientTimerManager.BotChatCadenceTicks * 3UL;
 
     public static async Task RunAsync(
         IReadOnlyList<ResidentBot> bots,
@@ -92,13 +93,17 @@ internal static class BotHostResidentLoop
                 continue;
             }
 
-            if (cadenceTick >= ClientTimerManager.BotChatCadenceTicks * 3UL)
+            if (cadenceTick >= AcceptanceCadenceEndTick)
             {
                 await delay(cancellationToken);
                 continue;
             }
 
-            cadenceTick++;
+            // Advance the Runtime timer through the complete acceptance window
+            // before yielding to the session receive pumps. This keeps all
+            // three cadence batches from being serialized behind a full
+            // 100-session WorldChange fan-out.
+            cadenceTick = AcceptanceCadenceEndTick;
             IReadOnlyList<ulong> dues = timer.Advance(cadenceTick);
             for (int d = 0; d < dues.Count; d++)
             {
