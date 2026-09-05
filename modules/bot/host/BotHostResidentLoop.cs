@@ -116,6 +116,11 @@ internal static class BotHostResidentLoop
                         "bot-" + dues[d].ToString(System.Globalization.CultureInfo.InvariantCulture));
                     world.Manager.Tick();
                 }
+
+                // Let the transport send loop and Room owner consume this
+                // batch before advancing to the next cadence deadline.
+                await delay(cancellationToken);
+                await Task.Delay(25, cancellationToken);
             }
 
             await delay(cancellationToken);

@@ -196,6 +196,19 @@ public sealed class BotCadenceTests
     }
 
     [Fact]
+    public void ProductionBotUsesLongIdleWindowForRoomConnections()
+    {
+        string source = File.ReadAllText(
+            Path.Combine(RepoRoot(), "modules", "bot", "host", "FoundationHostCommand.cs"));
+
+        Assert.Contains("TimeSpan.FromMinutes(5)", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "new WebSocketClientConnectionFactory(transportOptions)",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ProductionChatEvidenceHashesPayloadFromObservedWireBytes()
     {
         IClientReplica replica = new ClientReplicaFactory().Create();

@@ -192,6 +192,10 @@ public static class FoundationHostCommand
         var ingress = new InputSampleIngress(16);
         var options = new ClientEventPipelineOptions(8, 4, TimeSpan.FromSeconds(1));
         new ClientEventPipelineFactory().Create(in options, new InMemoryClientEventSink(8), out var writer);
+        var transportOptions = new WebSocketTransportOptions(
+            WebSocketTransportOptions.DefaultMaxMessageBytes,
+            WebSocketTransportOptions.DefaultReceiveBufferBytes,
+            TimeSpan.FromMinutes(5));
         byte[] initialFrame = JsonSerializer.SerializeToUtf8Bytes(new
         {
             connectionId = "c-" + account.ToLowerInvariant(),
@@ -205,7 +209,7 @@ public static class FoundationHostCommand
             requiresMvpChannelAuth: false);
         var evidence = new ProductionChatInputEvidence(logPath, account);
         var deps = new ClientSessionDependencies(
-            new WebSocketClientConnectionFactory(),
+            new WebSocketClientConnectionFactory(transportOptions),
             new ClientHandshakeFactory(),
             new HostCapability(),
             new HelloClassifier(),
