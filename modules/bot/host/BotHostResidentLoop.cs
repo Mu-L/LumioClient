@@ -20,6 +20,8 @@ internal readonly struct ResidentBot
 
 internal static class BotHostResidentLoop
 {
+    private const int CadenceBatchCount = 3;
+
     public static async Task RunAsync(
         IReadOnlyList<ResidentBot> bots,
         ClientTimerManager timer,
@@ -30,6 +32,7 @@ internal static class BotHostResidentLoop
     {
         ulong ownerFrame = 0;
         ulong cadenceTick = 0;
+        int nextCadenceBatch = 0;
         while (!cancellationToken.IsCancellationRequested && !File.Exists(releaseFlag))
         {
             ownerFrame++;
@@ -63,7 +66,8 @@ internal static class BotHostResidentLoop
             IReadOnlyList<ulong> dues = timer.Advance(cadenceTick);
             for (int d = 0; d < dues.Count; d++)
             {
-                for (int i = 0; i < bots.Count; i++)
+                int batch = nextCadenceBatch++;
+                for (int i = batch; i < bots.Count; i += CadenceBatchCount)
                 {
                     ResidentBot bot = bots[i];
                     if (!bot.Session.TryGetReplicaWorld(out IReplicaWorld world) || !world.InputEnabled)

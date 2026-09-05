@@ -115,12 +115,17 @@ public sealed class BotCadenceTests
         using var timer = new ClientTimerManager(abi);
         Assert.True(timer.ScheduleBotChatCadence());
         var session = new WorldBackedSession(world);
+        ResidentBot[] residents = Enumerable.Range(1, 6)
+            .Select(index => new ResidentBot(
+                "Bot" + index.ToString("D2", System.Globalization.CultureInfo.InvariantCulture),
+                session))
+            .ToArray();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         int code = BotHostOwnerPump.Run(async () =>
         {
             await BotHostResidentLoop.RunAsync(
-                new[] { new ResidentBot("Bot01", session) },
+                residents,
                 timer,
                 logPath,
                 releaseFlag,
@@ -149,9 +154,10 @@ public sealed class BotCadenceTests
             Assert.Contains("\"kind\":\"chat.input\"", log, StringComparison.Ordinal);
             Assert.Contains("\"tickSource\":\"native-kernel/tickFrame\"", log, StringComparison.Ordinal);
             Assert.Contains("\"accountId\":\"Bot01\"", log, StringComparison.Ordinal);
+            Assert.Equal(6, File.ReadAllLines(logPath).Length);
             Assert.Equal(new ulong[] { 5, 10, 15 }, timer.Trace.UtteranceTicks.ToArray());
             IReadOnlyList<WorldMessage> outbound = world.DrainOutbound();
-            Assert.Equal(3, outbound.Count(message => message is InputCommandMessage input
+            Assert.Equal(6, outbound.Count(message => message is InputCommandMessage input
                 && string.Equals(input.MappingId, "chat.input", StringComparison.Ordinal)));
         }
         finally
