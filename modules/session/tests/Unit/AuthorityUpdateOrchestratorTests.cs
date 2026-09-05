@@ -15,6 +15,7 @@ public sealed class AuthorityUpdateOrchestratorTests
         Assert.True(snap.BaselineAckSent);
         Assert.True(snap.PresentationWritten);
         Assert.True(snap.ReplicaStageCalls >= 1);
+        Assert.Equal(0, snap.PredictionAuthorityStageCalls);
         Assert.True(harness.Runtime.AuthorityCalls >= 1);
     }
 
@@ -46,12 +47,12 @@ public sealed class AuthorityUpdateOrchestratorTests
 public sealed class LocalPredictionOrchestratorTests
 {
     [Fact]
-    public void CommandSequenceAllocatedOnlyAfterRuntimeCommit()
+    public void LocalPredictionIsNotAProductionOutboundPath()
     {
         var harness = new SessionHarness(true);
         harness.HappyPathToActive();
         harness.Ingress.TryEnqueue(new Lumio.Client.Input.RawInputSample(1, 0, 0));
         harness.Tick();
-        Assert.True(harness.Runtime.LocalCalls >= 1);
+        Assert.Equal(0, harness.Runtime.LocalCalls);
     }
 }

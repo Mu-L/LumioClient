@@ -27,7 +27,6 @@ namespace Lumio.Client.Session
         private readonly FirstConnectOrchestrator _firstConnect = new FirstConnectOrchestrator();
         private readonly ScopeAndRuntimeActivationOrchestrator _activation = new ScopeAndRuntimeActivationOrchestrator();
         private readonly AuthorityUpdateOrchestrator _authority = new AuthorityUpdateOrchestrator();
-        private readonly LocalPredictionOrchestrator _localPrediction = new LocalPredictionOrchestrator();
         private readonly ResyncOrchestrator _resync = new ResyncOrchestrator();
         private readonly ReconnectOrchestrator _reconnect = new ReconnectOrchestrator();
         private readonly CloseOrchestrator _close = new CloseOrchestrator();
@@ -41,7 +40,6 @@ namespace Lumio.Client.Session
         private bool _baselineAck;
         private bool _presented;
         private int _replicaStages;
-        private int _predictionStages;
         private int _runtimeCalls;
         private int _drainLimit = ClientConnectionCreateRequest.DefaultDrainLimit;
         private ulong _snapshotSequence;
@@ -145,12 +143,6 @@ namespace Lumio.Client.Session
 
                     if (_machine.State == ClientSessionState.Active && !_superseded)
                     {
-                        _localPrediction.Tick(
-                            _dependencies.Commands,
-                            _prediction,
-                            _dependencies.Runtime,
-                            _connection,
-                            _machine.Generation);
                         DrainReplicaOutbound();
                     }
                 }
@@ -198,7 +190,7 @@ namespace Lumio.Client.Session
                     _baselineAck,
                     _presented,
                     _replicaStages,
-                    _predictionStages,
+                    0,
                     _runtimeCalls,
                     _handshakeOrch.BeginCount,
                     _handles.EcsCount,
@@ -422,7 +414,6 @@ namespace Lumio.Client.Session
         private void ApplyAuthority(ReadOnlyMemory<byte> update, ReplicaUpdateKind kind)
         {
             _replicaStages++;
-            _predictionStages++;
             _runtimeCalls++;
             ulong sequence = ++_snapshotSequence;
             bool resyncHint;
@@ -432,7 +423,6 @@ namespace Lumio.Client.Session
             bool indeterminate;
             resyncHint = _authority.TryCommit(
                 _replica,
-                _prediction,
                 _dependencies.Runtime,
                 _dependencies.Presentation,
                 _bundle,

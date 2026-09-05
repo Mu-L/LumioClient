@@ -90,6 +90,35 @@ public sealed class ReplicaFullSnapshotRebuildTests
     }
 
     [Fact]
+    public void FullSnapshotOnSameGenerationRebuildsTheRuntimeWorld()
+    {
+        ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Bot);
+        NetEntityId self = new(1UL, 2UL);
+        NetEntityId bot = new(1UL, 3UL);
+        Assert.True(consumer.Replica.TryObserveWelcome(WireCodec.EncodePack(new WelcomeMessage(1UL, self, 1UL))));
+        Assert.True(CommitFullSnapshot(consumer.Replica, 1UL, 1UL, InitialChange(self, bot)));
+        Assert.Equal(2, consumer.World.VisibleEntityCount);
+
+        var replacement = new WorldChangeMessage(
+            2UL,
+            0UL,
+            new[]
+            {
+                new CreateRecord("world", new NetEntityId(1UL, 1UL), Array.Empty<FieldValue>()),
+                new CreateRecord("player", self, Array.Empty<FieldValue>()),
+            },
+            Array.Empty<FieldChange>(),
+            Array.Empty<DestroyRecord>(),
+            Array.Empty<ClientRpcRecord>());
+        Assert.True(CommitFullSnapshot(consumer.Replica, 1UL, 2UL, replacement));
+
+        Assert.Equal(1, consumer.World.VisibleEntityCount);
+        Assert.DoesNotContain(consumer.World.CopyIdentityRecords(), record => record.NetEntityId == GameplayWireFixtures.RuntimeId(bot.Counter));
+        Assert.True(consumer.World.SelfLookup().Found);
+        Assert.True(consumer.World.InputEnabled);
+    }
+
+    [Fact]
     public void UnsortedIdentityRecordsAreRejected()
     {
         ReplicaChatConsumer consumer = GameplayWireFixtures.CreateConsumer(ReplicaClientKind.Browser);
@@ -166,14 +195,17 @@ public sealed class ReplicaFullSnapshotRebuildTests
             Array.Empty<ClientRpcRecord>());
 
     private static bool CommitWorldChange(IClientReplica replica, ulong generation, WorldChangeMessage change)
+        => CommitFullSnapshot(replica, generation, 1UL, change);
+
+    private static bool CommitFullSnapshot(IClientReplica replica, ulong generation, ulong sequence, WorldChangeMessage change)
     {
         var request = new ReplicaStageRequest(
             generation,
             ReplicaUpdateKind.FullSnapshot,
             0UL,
             0UL,
-            1UL,
-            1UL,
+            sequence,
+            sequence,
             WireCodec.EncodePack(change),
             Array.Empty<ulong>(),
             Array.Empty<ulong>());

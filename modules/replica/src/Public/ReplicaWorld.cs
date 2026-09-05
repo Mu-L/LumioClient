@@ -506,6 +506,22 @@ namespace Lumio.Client.Replica
             _runtimeQueries = EntityBindingQuery.Create(_manager);
         }
 
+        private bool RecreateManagerForFullSnapshot()
+        {
+            if (!_hasSelf
+                || !ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId selfId)
+                || selfId.IsDefault
+                || _self.ConnectionGeneration == 0UL)
+            {
+                return false;
+            }
+
+            RecreateManager();
+            _manager.Enqueue(new WelcomeMessage(selfId.InstanceId, selfId, _self.ConnectionGeneration));
+            _manager.Tick();
+            return true;
+        }
+
         private static bool TryDecodeRuntimeWorldChange(ReadOnlyMemory<byte> update, out WorldChangeMessage change)
         {
             try
@@ -526,10 +542,43 @@ namespace Lumio.Client.Replica
 
         private bool ApplyRuntimeCommitted(in ReplicaStageRequest request, WorldChangeMessage change)
         {
+            if (request.Kind == ReplicaUpdateKind.FullSnapshot && !RecreateManagerForFullSnapshot())
+            {
+                _lastRejectCode = GameplayReject.BadEnvelope;
+                return false;
+            }
+
             if (!ApplyPack(in change))
             {
                 _lastRejectCode = GameplayReject.BadEnvelope;
                 return false;
+            }
+
+            if (request.Kind == ReplicaUpdateKind.FullSnapshot
+                && ReplicaNetIds.TryParse(_self.NetEntityId, out NetEntityId snapshotSelfId)
+                && request.TombstoneEntityIds.Length > 0)
+            {
+                var destroys = new List<DestroyRecord>(request.TombstoneEntityIds.Length);
+                for (int i = 0; i < request.TombstoneEntityIds.Length; i++)
+                {
+                    ulong counter = request.TombstoneEntityIds.Span[i];
+                    if (counter != 0UL)
+                    {
+                        destroys.Add(new DestroyRecord(new NetEntityId(snapshotSelfId.InstanceId, counter), DestroyReason.Terminated));
+                    }
+                }
+
+                if (destroys.Count > 0)
+                {
+                    _manager.Enqueue(new WorldChangeMessage(
+                        change.Tick,
+                        change.AppliedInputSequence,
+                        Array.Empty<CreateRecord>(),
+                        Array.Empty<FieldChange>(),
+                        destroys,
+                        Array.Empty<ClientRpcRecord>()));
+                    _manager.Tick();
+                }
             }
 
             if (request.Kind == ReplicaUpdateKind.FullSnapshot)
