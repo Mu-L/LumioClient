@@ -5,7 +5,8 @@ namespace Lumio.Client.Connection
     internal sealed class LocalEmbeddedTransport
     {
         private readonly LocalEmbeddedEndpointPair _pair;
-        private readonly GeneratedEnvelopeCodecAdapter _codec = new GeneratedEnvelopeCodecAdapter();
+        private int _encodeCalls;
+        private int _decodeCalls;
 
         public LocalEmbeddedTransport(int capacity)
         {
@@ -19,17 +20,17 @@ namespace Lumio.Client.Connection
 
         public int EncodeCalls
         {
-            get { return _codec.EncodeCalls; }
+            get { return _encodeCalls; }
         }
 
         public int DecodeCalls
         {
-            get { return _codec.DecodeCalls; }
+            get { return _decodeCalls; }
         }
 
         public bool TrySendClient(in EncodedFrame frame)
         {
-            if (!_codec.TryEncode(in frame, out ReadOnlyMemory<byte> bytes))
+            if (!TryEncode(in frame, out ReadOnlyMemory<byte> bytes))
             {
                 return false;
             }
@@ -45,12 +46,12 @@ namespace Lumio.Client.Connection
                 return false;
             }
 
-            return _codec.TryDecode(bytes, out frame);
+            return TryDecode(bytes, out frame);
         }
 
         public bool TrySendServer(in EncodedFrame frame)
         {
-            if (!_codec.TryEncode(in frame, out ReadOnlyMemory<byte> bytes))
+            if (!TryEncode(in frame, out ReadOnlyMemory<byte> bytes))
             {
                 return false;
             }
@@ -66,7 +67,38 @@ namespace Lumio.Client.Connection
                 return false;
             }
 
-            return _codec.TryDecode(bytes, out frame);
+            return TryDecode(bytes, out frame);
+        }
+
+        // LocalEmbedded 走不透明字节:传输层只复制、不解释 payload,形状由 wire 契约在上层决定。
+        internal bool TryEncode(in EncodedFrame frame, out ReadOnlyMemory<byte> bytes)
+        {
+            bytes = default(ReadOnlyMemory<byte>);
+            if (frame.Bytes.IsEmpty)
+            {
+                return false;
+            }
+
+            byte[] copy = new byte[frame.Bytes.Length];
+            frame.Bytes.Span.CopyTo(copy);
+            bytes = copy;
+            _encodeCalls++;
+            return true;
+        }
+
+        internal bool TryDecode(ReadOnlyMemory<byte> bytes, out EncodedFrame frame)
+        {
+            frame = default(EncodedFrame);
+            if (bytes.IsEmpty)
+            {
+                return false;
+            }
+
+            byte[] copy = new byte[bytes.Length];
+            bytes.Span.CopyTo(copy);
+            frame = new EncodedFrame(copy);
+            _decodeCalls++;
+            return true;
         }
     }
 }

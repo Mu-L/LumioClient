@@ -138,7 +138,7 @@ namespace Lumio.Client.Prediction
                 return new PredictionAuthorityResult(PredictionAuthorityStatus.StaleGeneration);
             }
 
-            if (!GeneratedPredictionAdapter.TryClassify(update.Payload, out PredictionUpdateKind kind))
+            if (!PredictionUpdateClassifier.TryClassify(update.Payload, out PredictionUpdateKind kind))
             {
                 return new PredictionAuthorityResult(PredictionAuthorityStatus.Rejected);
             }

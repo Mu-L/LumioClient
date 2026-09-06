@@ -1,14 +1,15 @@
 namespace Lumio.Client.Replica.Tests.Support;
 
 /// <summary>
-/// Locates C-1 / C-2 living wire JSON on architecture origin/main (SHA 2b7e321).
-/// Does not embed a second protocol copy. Skip when the architecture checkout is absent.
+/// 定位架构仓 LumioGameEngine 的 living wire JSON(engine/wire/*.json)。
+/// 优先按文件的专用环境变量,其次 LUMIO_ENGINE_ROOT,最后向上找同级 LumioGameEngine 检出。
+/// 本仓不内嵌第二份协议副本;架构仓检出缺席时用例按 Skip 语义跳过。
 /// </summary>
 internal static class WireContractLocator
 {
     public const string GameplayEnvelopeFileName = "gameplay-command-envelope-v1.json";
     public const string EntityBindingFileName = "entity-binding-and-query-v1.json";
-    public const string ArchitectureRootVariable = "LUMIO_ARCHITECTURE_ROOT";
+    public const string EngineRootVariable = "LUMIO_ENGINE_ROOT";
     public const string GameplayEnvelopeVariable = "LUMIO_GAMEPLAY_ENVELOPE_CONTRACT";
     public const string EntityBindingVariable = "LUMIO_ENTITY_BINDING_CONTRACT";
 
@@ -30,10 +31,10 @@ internal static class WireContractLocator
             return fromFile;
         }
 
-        string? fromRoot = Environment.GetEnvironmentVariable(ArchitectureRootVariable);
-        if (!string.IsNullOrEmpty(fromRoot))
+        string? engineRoot = Environment.GetEnvironmentVariable(EngineRootVariable);
+        if (!string.IsNullOrEmpty(engineRoot))
         {
-            string rooted = Path.Combine(fromRoot, "engine", "wire", fileName);
+            string rooted = Path.Combine(engineRoot, "engine", "wire", fileName);
             if (File.Exists(rooted))
             {
                 return rooted;
@@ -43,19 +44,10 @@ internal static class WireContractLocator
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         while (directory is not null)
         {
-            string[] candidates =
+            string candidate = Path.Combine(directory.FullName, "LumioGameEngine", "engine", "wire", fileName);
+            if (File.Exists(candidate))
             {
-                Path.Combine(directory.FullName, "LumioGameEngineArchitecture", "engine", "wire", fileName),
-                Path.Combine(directory.FullName, "wt-arch", "merge-wave0", "engine", "wire", fileName),
-                Path.Combine(directory.FullName, "wt-arch", "merge-main", "engine", "wire", fileName),
-                Path.Combine(directory.FullName, "engine", "wire", fileName)
-            };
-            foreach (string candidate in candidates)
-            {
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
+                return candidate;
             }
 
             directory = directory.Parent;

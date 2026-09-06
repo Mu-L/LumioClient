@@ -12,7 +12,7 @@ public sealed class HelloBotFlowTests
         string? path = HelloContractLocator.Locate();
         if (path is null)
         {
-            throw Xunit.Sdk.SkipException.ForSkip("hello-wire-v1.json 未找到:需要兄弟 LumioGameEngineArchitecture 检出或 LUMIO_HELLO_WIRE_CONTRACT 环境变量;本仓不内嵌契约副本。");
+            throw Xunit.Sdk.SkipException.ForSkip("hello-wire-v1.json 未找到:需要同级 LumioGameEngine 检出,或 LUMIO_ENGINE_ROOT / LUMIO_HELLO_WIRE_CONTRACT 环境变量;本仓不内嵌契约副本。");
         }
 
         return path;
