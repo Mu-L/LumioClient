@@ -8,14 +8,12 @@ namespace Lumio.Client.Handshake
     {
         private readonly IPlatformCapabilityProvider _capabilities;
         private readonly GeneratedHandshakeAdapter _adapter;
-        private readonly CapabilityCompletionQueue _completions = new CapabilityCompletionQueue();
         private HandshakeAttemptId _attempt;
         private ulong _generation;
         private HandshakePhase _phase = HandshakePhase.Idle;
         private HandshakeRejectReason _reject;
-        private bool _helloValid;
-        private bool _capabilityReady;
-        private bool _capabilityOk;
+        private Task<PlatformCapabilityResult>? _pendingCapability;
+        private CancellationTokenSource? _capabilityCancellation;
 
         public HandshakeSession(IPlatformCapabilityProvider capabilities)
             : this(capabilities, new UnpublishedHandshakeFrameClassifier())
@@ -38,13 +36,11 @@ namespace Lumio.Client.Handshake
                 return new HandshakeCommandResult(false);
             }
 
+            CancelPendingCapability();
             _attempt = request.Attempt;
             _generation = request.Generation;
             _phase = HandshakePhase.AwaitingHello;
             _reject = HandshakeRejectReason.None;
-            _helloValid = false;
-            _capabilityReady = false;
-            _capabilityOk = false;
             return new HandshakeCommandResult(true);
         }
 
@@ -56,56 +52,50 @@ namespace Lumio.Client.Handshake
             }
 
             HandshakeOpaqueFrameRole role = _adapter.Classify(frame);
-            if (role == HandshakeOpaqueFrameRole.Unclassified)
-            {
-                return new HandshakeCommandResult(false);
-            }
-
             if (role == HandshakeOpaqueFrameRole.HandshakeReject)
             {
                 _phase = HandshakePhase.Rejected;
                 _reject = HandshakeRejectReason.InvalidHello;
+                CancelPendingCapability();
                 return new HandshakeCommandResult(true);
             }
 
-            if (role != HandshakeOpaqueFrameRole.ServerHello)
+            if (role != HandshakeOpaqueFrameRole.ServerHello || _phase != HandshakePhase.AwaitingHello)
             {
                 return new HandshakeCommandResult(false);
             }
 
-            _helloValid = true;
             _phase = HandshakePhase.AwaitingCapability;
-            ValueTask<PlatformCapabilityResult> pending = _capabilities.QueryAsync(
+            _capabilityCancellation = new CancellationTokenSource();
+            // Consume the ValueTask exactly once. The owner polls the resulting
+            // Task; a continuation never mutates session state on a worker thread.
+            _pendingCapability = QueryCapabilityAsync(
                 new PlatformCapabilityQuery(_attempt, _generation),
-                CancellationToken.None);
-            if (pending.IsCompleted)
-            {
-                PlatformCapabilityResult result = pending.Result;
-                _completions.Enqueue(in result);
-            }
+                _capabilityCancellation.Token);
             return new HandshakeCommandResult(true);
         }
 
         public HandshakeOutcome Poll()
         {
-            if (_completions.TryDequeue(out PlatformCapabilityResult result))
+            if (_phase != HandshakePhase.AwaitingCapability
+                || _pendingCapability == null
+                || !_pendingCapability.IsCompleted)
             {
-                if (result.Attempt.Value != _attempt.Value || result.Generation != _generation)
-                {
-                    return GetSnapshot();
-                }
+                return GetSnapshot();
+            }
 
-                _capabilityReady = true;
-                _capabilityOk = result.Compatible;
-                if (_helloValid && _capabilityReady && _capabilityOk)
-                {
-                    _phase = HandshakePhase.Accepted;
-                }
-                else
-                {
-                    _phase = HandshakePhase.Rejected;
-                    _reject = HandshakeRejectReason.CapabilityMismatch;
-                }
+            PlatformCapabilityResult result = _pendingCapability.GetAwaiter().GetResult();
+            _pendingCapability = null;
+            _capabilityCancellation?.Dispose();
+            _capabilityCancellation = null;
+            if (result.Attempt.Value != _attempt.Value || result.Generation != _generation || !result.Compatible)
+            {
+                _phase = HandshakePhase.Rejected;
+                _reject = HandshakeRejectReason.CapabilityMismatch;
+            }
+            else
+            {
+                _phase = HandshakePhase.Accepted;
             }
 
             return GetSnapshot();
@@ -113,12 +103,9 @@ namespace Lumio.Client.Handshake
 
         public HandshakeCommandResult Cancel()
         {
-            if (_phase == HandshakePhase.Accepted || _phase == HandshakePhase.Rejected)
+            if (_phase == HandshakePhase.Accepted)
             {
-                if (_phase == HandshakePhase.Accepted)
-                {
-                    return new HandshakeCommandResult(false);
-                }
+                return new HandshakeCommandResult(false);
             }
 
             if (_phase != HandshakePhase.Idle)
@@ -127,12 +114,51 @@ namespace Lumio.Client.Handshake
                 _reject = HandshakeRejectReason.Cancelled;
             }
 
+            CancelPendingCapability();
             return new HandshakeCommandResult(true);
         }
 
         public HandshakeOutcome GetSnapshot()
         {
             return new HandshakeOutcome(_phase, _reject, _phase == HandshakePhase.Accepted);
+        }
+
+        private async Task<PlatformCapabilityResult> QueryCapabilityAsync(PlatformCapabilityQuery query, CancellationToken token)
+        {
+            try
+            {
+                return await _capabilities.QueryAsync(in query, token).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Includes synchronous provider throws, cancellation and delayed
+                // faults. Retired attempts cannot leave an unobserved exception.
+                return new PlatformCapabilityResult(query.Attempt, query.Generation, false);
+            }
+        }
+
+        private void CancelPendingCapability()
+        {
+            _pendingCapability = null;
+            CancellationTokenSource? cancellation = _capabilityCancellation;
+            _capabilityCancellation = null;
+            if (cancellation == null)
+            {
+                return;
+            }
+
+            try
+            {
+                cancellation.Cancel();
+            }
+            catch (AggregateException)
+            {
+                // A provider's cancellation callback must not resurrect this attempt.
+            }
+            finally
+            {
+                cancellation.Dispose();
+            }
         }
     }
 }
