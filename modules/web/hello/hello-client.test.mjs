@@ -110,21 +110,41 @@ const LAUNCH_RESPONSE = Object.freeze({
 
 const sha256Hex = (text) => createHash("sha256").update(text, "utf8").digest("hex");
 
-function stubElement() {
-  // 页面把渲染写进这些 DOM 出口;测试不断言渲染,吞掉即可。
-  return {
-    textContent: "",
+// 记录页面渲染出去的文本:凭证若被渲染进页面,也是一种对外暴露。
+function stubElement(rendered) {
+  let text = "";
+  const el = {
     rows: { length: 0 },
     replaceChildren() {},
-    append() {},
+    append(...parts) {
+      for (const part of parts) {
+        if (typeof part === "string") rendered.push(part);
+      }
+    },
     prepend() {},
     remove() {},
     deleteRow() {},
   };
+  Object.defineProperty(el, "textContent", {
+    get: () => text,
+    set(value) {
+      text = String(value);
+      rendered.push(text);
+    },
+    enumerable: true,
+  });
+  return el;
 }
 
 // 装一个刚好够 hello-client.js 跑起来的浏览器外壳,并接管 fetch / WebSocket 以便观测。
-async function runPage({ search, pathname, launchResponse = LAUNCH_RESPONSE, launchOk = true }) {
+async function runPage({
+  search,
+  pathname,
+  launchResponse = LAUNCH_RESPONSE,
+  launchOk = true,
+  // 预期页面停在 waiting(既不建连也不记错)时,没有可等的信号,用短超时避免空等。
+  settleTimeoutMs = 2000,
+}) {
   const fetchCalls = [];
   const sockets = [];
 
@@ -145,15 +165,22 @@ async function runPage({ search, pathname, launchResponse = LAUNCH_RESPONSE, lau
     }
   }
 
+  const rendered = [];
+  const logged = [];
+  const record = (...args) => logged.push(args.map((arg) => String(arg)).join(" "));
+
   const win = { location: { search, pathname }, __lumioResult: null };
   const sandbox = {
     window: win,
-    document: { getElementById: () => stubElement(), createElement: () => stubElement() },
+    document: {
+      getElementById: () => stubElement(rendered),
+      createElement: () => stubElement(rendered),
+    },
     WebSocket: ObservableSocket,
     URLSearchParams,
     TextEncoder,
     crypto: webcrypto,
-    console: { error() {}, warn() {}, log() {} },
+    console: { error: record, warn: record, log: record },
     setTimeout,
     async fetch(url, init) {
       const href = String(url);
@@ -171,9 +198,12 @@ async function runPage({ search, pathname, launchResponse = LAUNCH_RESPONSE, lau
   vm.runInNewContext(HELLO_CLIENT_SOURCE, sandbox, { filename: HELLO_CLIENT_PATH.href });
 
   // 页面主流程是异步的:等它跑到终态(建连成功或记下错误)再断言。
-  await settle(() => sockets.length > 0 || (win.__lumioResult?.errors?.length ?? 0) > 0);
+  await settle(
+    () => sockets.length > 0 || (win.__lumioResult?.errors?.length ?? 0) > 0,
+    settleTimeoutMs,
+  );
 
-  return { win, fetchCalls, sockets, result: win.__lumioResult };
+  return { win, fetchCalls, sockets, rendered, logged, result: win.__lumioResult };
 }
 
 async function settle(done, timeoutMs = 2000) {
@@ -236,6 +266,30 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+// 凭证允许出现的地方只有握手帧。把「除此之外页面能把值送出去的所有出口」收集起来统一扫描,
+// 逐个列举 sink(而不是只看 __lumioResult)才挡得住「换个地方泄漏」的退化。
+// 上游 platform-port-v1.json 的 launch.semantics 点名了 URL 与日志,故日志也在扫描面内。
+function collectExposures({ win, fetchCalls, sockets, rendered, logged }) {
+  const exposures = [
+    ["window", serialize(win)], // 含 __lumioResult 与页面挂到 window 上的任何其他属性
+  ];
+  for (const call of fetchCalls) exposures.push([`fetch:${call.url}`, call.url]);
+  for (const socket of sockets) {
+    exposures.push(["ws:url", String(socket.url)]);
+    exposures.push(["ws:subprotocol", String(socket.subprotocol ?? "")]);
+    // 握手帧(第 0 帧)是凭证唯一合法的去处,不进扫描面;其余帧都要扫。
+    for (const [index, frame] of socket.sent.entries()) {
+      if (index > 0) exposures.push([`ws:frame[${index}]`, frame]);
+    }
+  }
+  for (const [index, text] of rendered.entries()) exposures.push([`dom[${index}]`, text]);
+  for (const [index, line] of logged.entries()) exposures.push([`console[${index}]`, line]);
+  return exposures;
+}
+
+const findSecret = (exposures, secret) =>
+  exposures.filter(([, text]) => text.includes(secret)).map(([label]) => label);
+
 test("无 ?ws= 时经 launch 端口取地址与凭证并据此建连", async () => {
   const { fetchCalls, sockets, result } = await runPage({
     search: "",
@@ -294,10 +348,11 @@ test("有 ?ws= 的考卷本地模式全程不携带任何准入凭证", async ()
 });
 
 test("凭证只出现在握手帧:不进 URL,不进 window.__lumioResult", async () => {
-  const { fetchCalls, sockets, result } = await runPage({
+  const page = await runPage({
     search: "",
     pathname: "/games/hello-world/",
   });
+  const { sockets, result } = page;
 
   const credential = LAUNCH_RESPONSE.admissionCredential;
   const socket = sockets[0];
@@ -312,17 +367,16 @@ test("凭证只出现在握手帧:不进 URL,不进 window.__lumioResult", async
   assert.equal(handshake.messageType, "Handshake");
   assert.equal(handshake.admissionCredential, credential, "凭证应在握手帧内");
 
-  // 反向:除握手帧外,凭证不得出现在任何对外可见处。
+  // 反向:除握手帧外,凭证不得出现在任何对外可见的出口。
+  const exposures = collectExposures(page);
+  assert.deepEqual(
+    findSecret(exposures, credential),
+    [],
+    "凭证泄漏到了握手帧之外的出口",
+  );
+  // 单独点名卡面字面要求的两处,回归时报错信息更直白。
   assert.ok(!serialize(result).includes(credential), "凭证不得进 window.__lumioResult");
-  for (const call of fetchCalls) {
-    assert.ok(!call.url.includes(credential), `凭证不得进 fetch URL: ${call.url}`);
-  }
   assert.ok(!socket.url.includes(credential), "凭证不得进 WebSocket URL");
-  assert.ok(!String(socket.subprotocol ?? "").includes(credential), "凭证不得进 subprotocol");
-  for (const [index, frame] of socket.sent.entries()) {
-    if (index === 0) continue;
-    assert.ok(!frame.includes(credential), `凭证不得出现在握手之后的帧: ${frame}`);
-  }
 });
 
 test("launch 失败时呈现明确状态且不重试风暴", async () => {
@@ -341,11 +395,64 @@ test("launch 失败时呈现明确状态且不重试风暴", async () => {
   );
 });
 
-// 反向 fixture:证明上面的「凭证不得出现」扫描不是空断言——真塞一个凭证进去,它必须抓到。
-// 没有这条,凭证扫描可能悄悄退化成永真式而无人察觉。
-test("凭证扫描器对真实泄漏必须报警(反向 fixture)", () => {
+test("launch 应答缺必需字段时按 launch_failed 处理,不建连", async () => {
+  const { sockets, result } = await runPage({
+    search: "",
+    pathname: "/games/hello-world/",
+    launchResponse: { subprotocol: "lumio-launch-v1" }, // 缺 wsUrl 与 admissionCredential
+  });
+
+  assert.equal(sockets.length, 0, "应答不完整就不建连");
+  assert.equal(result.status, "error");
+  assert.deepEqual(
+    plain(result.errors).map((error) => error.code),
+    ["launch_failed"],
+  );
+});
+
+test("slug 取 /games/ 之后那一段,而非路径最后一段", async () => {
+  const { fetchCalls } = await runPage({
+    search: "",
+    pathname: "/games/hello-world/index.html",
+  });
+
+  assert.deepEqual(
+    launchCalls(fetchCalls).map((call) => call.url),
+    ["/api/games/hello-world/launch"],
+    "深链到具体页面时 slug 仍应是 hello-world",
+  );
+});
+
+test("路径里没有 /games/ 锚点时停在 waiting:不请求 launch、不建连、不报错", async () => {
+  const { fetchCalls, sockets, result } = await runPage({
+    search: "",
+    pathname: "/some/other/page/",
+    settleTimeoutMs: 200,
+  });
+
+  assert.deepEqual(launchCalls(fetchCalls), [], "推导不出 slug 就不该请求 launch");
+  assert.equal(sockets.length, 0, "推导不出 slug 就不该建连");
+  assert.equal(result.status, "running", "这是 waiting 态,不是错误态");
+  assert.deepEqual(plain(result.errors), []);
+});
+
+// 反向 fixture:把泄漏植入**真实跑出来的 exposure 集合**再扫一遍,证明上面那条全绿不是因为
+// 扫描面是空的或 findSecret 恒返回空。真正的抗退化证据是变异测试(见本卡交付记录),
+// 这条守的是「扫描器本身别退化成永真式」。
+test("凭证扫描器对植入的泄漏必须报警(反向 fixture)", async () => {
+  const page = await runPage({ search: "", pathname: "/games/hello-world/" });
+  await playFullSession(page.sockets[0]);
   const credential = LAUNCH_RESPONSE.admissionCredential;
-  const leakedResult = { status: "ok", errors: [], sent: { admissionCredential: credential } };
-  assert.ok(serialize(leakedResult).includes(credential), "扫描器漏掉了 __lumioResult 里的泄漏");
-  assert.ok(`wss://edge.example/play?cred=${credential}`.includes(credential), "扫描器漏掉了 URL 里的泄漏");
+
+  const exposures = collectExposures(page);
+  assert.ok(exposures.length > 0, "exposure 集合不能是空的,否则扫描无意义");
+  assert.deepEqual(findSecret(exposures, credential), []);
+
+  for (const planted of ["window", "ws:frame[1]", "dom[0]", "console[0]"]) {
+    assert.deepEqual(
+      findSecret([...exposures, [planted, `prefix-${credential}-suffix`]], credential),
+      [planted],
+      `扫描器漏掉了植入 ${planted} 的泄漏`,
+    );
+  }
 });

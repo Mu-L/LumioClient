@@ -24,7 +24,7 @@
 
 **入口:** 两种取地址模式,由 URL query `ws` 是否在场决定。
 
-- **平台模式(默认,无 `?ws=`)**:由页面路径 `/games/<slug>/` 推导 slug,同源 `POST /api/games/<slug>/launch`(`credentials: same-origin`),取应答的 `wsUrl` / `subprotocol` / `admissionCredential`;凭证只随握手帧发出,不进 URL、不进 `window.__lumioResult`。应答形状的真值是架构仓 `engine/wire/platform-port-v1.json` 的 `launch`。
+- **平台模式(默认,无 `?ws=`)**:由页面路径 `/games/` 之后那一段推导 slug,同源 `POST /api/games/<slug>/launch`(`credentials: same-origin`)。`wsUrl` 与 `admissionCredential` 是页面硬性要求的两个字段,缺任一即按 `launch_failed` 处理;`subprotocol` 在应答里是字符串时覆盖契约值,缺失则回落契约的 `transport.subprotocol`。凭证只随握手帧发出,不进 URL、不进 `window.__lumioResult`、不进页面渲染与日志。应答形状的真值是架构仓 `engine/wire/platform-port-v1.json` 的 `launch`。
 - **考卷本地模式(有 `?ws=`)**:地址取自 query,子协议取自契约,整段流程不调用 launch 端口、不携带凭证——行为与平台模式引入前一致。
 
 两种模式共用的其余入口:URL query `role`(默认 browser);同目录 `contract.json`。
