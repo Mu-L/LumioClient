@@ -33,6 +33,22 @@ metadata:
 
 ## 条目
 
+### 外部 / 无 SDK 环境的 Agent 交付只能开 PR 不能自合；CI 红 = 不合
+
+- 日期：2026-09-06
+- 现象：外部 Agent（Go1c）自合整改 PR #20（287a00a），在未配置 .NET SDK、从未编译且本地未执行回归测试、GitHub Actions 双平台 CI 均为 Failure 的情况下合并入 main，导致主干产生 5 处编译错误与 25 个测试回归。
+- 根因：违反红线「未过验证不得合并」与「reviewer 闭环」；把无本地执行验证能力的声称当成事实，并在 CI 红状态下自合。
+- 规避：外部环境或无相应 SDK/测试执行能力的 Agent 交付物一律严格限制为只能开启 PR，绝对禁止自合；CI 出现任何 Failure 均视为不合入硬门禁；严禁绕过 reviewer 审查机制。
+- 来源：架构仓复核报告 `.spec/reviews/2026-09-06-lumioclient-external-review-audit.md` 与主干收敛任务。
+
+### 改 CreateRecord 等标记性字符串前先 grep 注册表 WireName 与断言方
+
+- 日期：2026-09-06
+- 现象：PR #20 将测试 Harness 中的 wire name 从已修复的 "world" / "player" 错误改回非法的 "WorldEntity" / "PlayerEntity"，导致全量快照反序列化被 ReplicaWorld.TryValidateRuntimeChange 校验拒绝，引发 23 个测试级联失败落入 Faulted 状态。
+- 根因：凭直觉或局部代码上下文修改实体类型名与契约标记串，未与下游注册表（如 Username.Client.Registry.g.cs）或上游架构 wire 规范交叉比对。
+- 规避：在修改任何涉及 `CreateRecord`、协议标记或实体类型的字符串前，必须先在全仓 grep 对应的注册表 WireName、契约常量以及所有断言方与消费者，确认命名严格匹配。
+- 来源：架构仓复核报告 `.spec/reviews/2026-09-06-lumioclient-external-review-audit.md` §4。
+
 ### 审计记录（bytes/SHA-256/计数）必须有机器闸门校验，否则只会静默变成谎言
 
 - 日期：2026-08-29
