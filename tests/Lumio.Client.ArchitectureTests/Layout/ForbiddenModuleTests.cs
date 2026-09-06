@@ -18,8 +18,8 @@ public sealed class ForbiddenModuleTests
         var actual = Directory.GetDirectories(modulesRoot).Select(System.IO.Path.GetFileName).OrderBy(n => n).ToArray();
         var expected = new[]
         {
-            "bot", "connection", "handshake", "hello", "hybridclr-adapter", "input", "observability",
-            "persistence", "prediction", "replica", "session", "unity-adapter", "web"
+            "bot", "connection", "handshake", "hello", "input", "observability",
+            "persistence", "prediction", "replica", "session", "web"
         };
         Assert.Equal(expected, actual);
     }

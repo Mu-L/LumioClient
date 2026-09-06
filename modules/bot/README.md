@@ -4,11 +4,9 @@
 
 ## 状态
 
-- 阶段：未实现
+- 阶段：已交付：`HeadlessBotHost` + `ClientTimerManager`（消费 NativeCore `tickFrame`，经 SDK NativeLoader）与 Bot 宿主 CLI
 - 优先级：P1
-- 公共契约来源：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
-- 公共契约来源：[`Host Profile、平台与能力`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#10-host-profile平台与能力)、[`工具链、测试与可观测性`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#15-工具链测试与可观测性)
-- 内部设计：[`LumioClient 模块化架构`](../../docs/specs/2026-08-27-client-module-architecture-design.md)
+- 公共契约来源：架构仓 `LumioGameEngine` 的 `.spec/knowledge/features/architecture.md` §3.2（Root 表与 CLR 装载）、§4（开发期构建与最新代码证明）
 
 ## 责任
 

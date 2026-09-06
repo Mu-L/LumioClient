@@ -4,11 +4,9 @@
 
 ## 状态
 
-- 阶段：未实现
+- 阶段：最小切片已交付：有界 Sample 队列 + 序号分配
 - 优先级：P1
-- 公共契约来源：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
-- 公共契约来源：[`队列与迟到输入`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#43-队列与迟到输入)、[`Host Profile、平台与能力`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#10-host-profile平台与能力)
-- 内部设计：[`LumioClient 模块化架构`](../../docs/specs/2026-08-27-client-module-architecture-design.md)
+- 公共契约来源：架构仓 `LumioGameEngine` 的 `.spec/knowledge/features/gas.md` M7（移动也是一个 Ability，预测键 = 输入序号）与 `.spec/knowledge/features/movement.md`
 
 ## 责任
 
@@ -49,7 +47,7 @@
 
 - 允许依赖：[`observability`](../observability/README.md)。
 - 外部依赖：生成的 Game Input/Gameplay Command Mapping、Host Tick/Profile Port。
-- 被依赖方：[`session`](../session/README.md)、[`unity-adapter`](../unity-adapter/README.md)、[`bot`](../bot/README.md)。
+- 被依赖方：[`session`](../session/README.md)、[`bot`](../bot/README.md)。
 - 禁止依赖：Prediction/Replica 实现、Unity/HybridCLR SDK、Renderer、Server 实现。
 
 ## 生命周期与线程模型

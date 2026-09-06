@@ -179,9 +179,7 @@
           "Lumio.Client.Persistence": "[1.0.0, )",
           "Lumio.Client.Prediction": "[1.0.0, )",
           "Lumio.Client.Replica": "[1.0.0, )",
-          "Lumio.Client.Session": "[1.0.0, )",
-          "Lumio.Engine.NativeLoader": "[1.0.0, )",
-          "Lumio.Engine.SDK": "[1.0.0, )"
+          "Lumio.Client.Session": "[1.0.0, )"
         }
       },
       "lumio.client.connection": {
@@ -194,13 +192,6 @@
         "type": "Project",
         "dependencies": {
           "Lumio.Client.Connection": "[1.0.0, )",
-          "Lumio.Client.Observability": "[1.0.0, )"
-        }
-      },
-      "lumio.client.hybridclradapter": {
-        "type": "Project",
-        "dependencies": {
-          "Lumio.Client.Handshake": "[1.0.0, )",
           "Lumio.Client.Observability": "[1.0.0, )"
         }
       },
@@ -244,23 +235,6 @@
           "Lumio.Client.Persistence": "[1.0.0, )",
           "Lumio.Client.Prediction": "[1.0.0, )",
           "Lumio.Client.Replica": "[1.0.0, )"
-        }
-      },
-      "lumio.client.unityadapter": {
-        "type": "Project",
-        "dependencies": {
-          "Lumio.Client.Input": "[1.0.0, )",
-          "Lumio.Client.Observability": "[1.0.0, )",
-          "Lumio.Client.Session": "[1.0.0, )"
-        }
-      },
-      "lumio.engine.nativeloader": {
-        "type": "Project"
-      },
-      "lumio.engine.sdk": {
-        "type": "Project",
-        "dependencies": {
-          "Lumio.Engine.NativeLoader": "[1.0.0, )"
         }
       },
       "lumio.gameruntime.command": {

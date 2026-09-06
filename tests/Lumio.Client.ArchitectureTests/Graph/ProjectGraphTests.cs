@@ -4,7 +4,7 @@ namespace Lumio.Client.ArchitectureTests.Graph;
 
 public sealed class ProjectGraphTests
 {
-    private static readonly string[] Eleven =
+    private static readonly string[] ProductionModuleAssemblies =
     {
         "Lumio.Client.Session",
         "Lumio.Client.Connection",
@@ -14,15 +14,13 @@ public sealed class ProjectGraphTests
         "Lumio.Client.Input",
         "Lumio.Client.Persistence",
         "Lumio.Client.Observability",
-        "Lumio.Client.UnityAdapter",
-        "Lumio.Client.HybridClrAdapter",
         "Lumio.Client.Bot"
     };
 
     [Fact]
-    public void AllElevenModuleAssembliesExist()
+    public void AllProductionModuleAssembliesExist()
     {
-        foreach (var assembly in Eleven)
+        foreach (var assembly in ProductionModuleAssemblies)
         {
             var matches = RepoFiles.WithFileName(assembly + ".csproj")
                 .Where(p => p.Contains($"{System.IO.Path.DirectorySeparatorChar}src{System.IO.Path.DirectorySeparatorChar}", StringComparison.Ordinal)

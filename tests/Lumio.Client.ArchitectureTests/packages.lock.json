@@ -228,13 +228,6 @@
           "Lumio.Client.Observability": "[1.0.0, )"
         }
       },
-      "lumio.client.hybridclradapter": {
-        "type": "Project",
-        "dependencies": {
-          "Lumio.Client.Handshake": "[1.0.0, )",
-          "Lumio.Client.Observability": "[1.0.0, )"
-        }
-      },
       "lumio.client.input": {
         "type": "Project",
         "dependencies": {
@@ -275,14 +268,6 @@
           "Lumio.Client.Persistence": "[1.0.0, )",
           "Lumio.Client.Prediction": "[1.0.0, )",
           "Lumio.Client.Replica": "[1.0.0, )"
-        }
-      },
-      "lumio.client.unityadapter": {
-        "type": "Project",
-        "dependencies": {
-          "Lumio.Client.Input": "[1.0.0, )",
-          "Lumio.Client.Observability": "[1.0.0, )",
-          "Lumio.Client.Session": "[1.0.0, )"
         }
       },
       "lumio.gameruntime.command": {

@@ -42,7 +42,7 @@ node .spec/tools/spec-lint.mjs
 node --test .spec/tools/spec-lint.test.mjs
 ```
 
-Foundation 已引入 SDK `10.0.400`（`global.json` `rollForward: disable`）与 xUnit v3 测试面。涉及实现的改动还必须跑对应项目的 `dotnet test`（ArchitectureTests / IntegrationTests / 各模块 `modules/<name>/tests`）。Unity 设备 Smoke 与 HybridCLR 矩阵仍受未创建的 SPIKE 阻塞，不进入默认收口。公共 Contract 变更还必须在 `LumioGameEngineArchitecture` 安装 `requirements-dev.txt` 后运行 `python3 tools/lumio_contract.py validate`。
+Foundation 已引入 SDK `10.0.400`（`global.json` `rollForward: disable`）与 xUnit v3 测试面。涉及实现的改动还必须跑对应项目的 `dotnet test`（ArchitectureTests / IntegrationTests / 各模块 `modules/<name>/tests`）。Unity / HybridCLR 是后续候选（LumioGame ADR 0013），不进入默认收口。公共契约变更不在本仓兜底：改动落架构仓 `LumioGameEngine` 的 `engine/wire` / `engine/abi`，本仓只消费并跟随；需要契约真值的测试直接读 `../LumioGameEngine/engine/wire/*.json`（或 `LUMIO_ENGINE_ROOT`），读不到按 Skip 跳过，不内嵌副本。
 
 ## 本仓 Headless / 契约测试面
 

@@ -33,15 +33,6 @@
       "Lumio.Client.Persistence",
       "Lumio.Client.Observability"
     ],
-    "Lumio.Client.UnityAdapter": [
-      "Lumio.Client.Session",
-      "Lumio.Client.Input",
-      "Lumio.Client.Observability"
-    ],
-    "Lumio.Client.HybridClrAdapter": [
-      "Lumio.Client.Handshake",
-      "Lumio.Client.Observability"
-    ],
     "Lumio.Client.Bot": [
       "Lumio.Client.Session",
       "Lumio.Client.Input",

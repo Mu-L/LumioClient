@@ -19,10 +19,6 @@
   <Project Path="modules/persistence/tests/Lumio.Client.Persistence.Tests.csproj" />
   <Project Path="modules/observability/src/Lumio.Client.Observability.csproj" />
   <Project Path="modules/observability/tests/Lumio.Client.Observability.Tests.csproj" />
-  <Project Path="modules/unity-adapter/src/Lumio.Client.UnityAdapter.csproj" />
-  <Project Path="modules/unity-adapter/tests/Lumio.Client.UnityAdapter.Tests.csproj" />
-  <Project Path="modules/hybridclr-adapter/src/Lumio.Client.HybridClrAdapter.csproj" />
-  <Project Path="modules/hybridclr-adapter/tests/Lumio.Client.HybridClrAdapter.Tests.csproj" />
   <Project Path="modules/bot/src/Lumio.Client.Bot.csproj" />
   <Project Path="modules/bot/tests/Lumio.Client.Bot.Tests.csproj" />
   <Project Path="modules/bot/host/Lumio.Client.Bot.Host.csproj" />

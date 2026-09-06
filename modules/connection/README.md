@@ -6,9 +6,7 @@
 
 - 阶段：LocalEmbedded 环回与 WSS 远程传输已落地；LocalSplitProcess 尚未实现
 - 优先级：P0
-- 公共契约来源：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
-- 公共契约来源：[`Wire 与 Transport`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#73-wire-与-transport)、[`Host Profile、平台与能力`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#10-host-profile平台与能力)
-- 内部设计：[`LumioClient 模块化架构`](../../docs/specs/2026-08-27-client-module-architecture-design.md)
+- 公共契约来源：架构仓 `LumioGameEngine` 的 `.spec/knowledge/features/architecture.md` §3.3（Wire 协议）与 `engine/wire/*.json`
 
 ## 责任
 
@@ -85,9 +83,8 @@
 
 ## 目录
 
-- `src/Public/`：稳定公共面——`IClientConnection`、`IClientConnectionFactory`、`ClientEndpoint`、`EncodedFrame`、`ConnectionEvent`、`ITransportFaultPolicy`。
-- `src/Internal/`：`State/` 生命周期状态机、`Queues/` 有界 ingress/egress、`Faults/` Fault Decorator、`Protocol/` 编解码适配位、`Transport/LocalEmbedded/` 与 `Transport/WebSocket/` 两条通道。
+- `src/Public/`：稳定公共面——`IClientConnection`、`IClientConnectionFactory`、`ClientEndpoint`、`EncodedFrame`、`ConnectionEvent`、`ITransportFaultPolicy`、`WebSocketClientConnectionFactory`、`WebSocketTransportOptions`。
+- `src/Internal/`：`State/` 生命周期状态机、`Queues/` 有界 ingress/egress、`Faults/` Fault Decorator、`Protocol/` 反重放窗口、`Transport/LocalEmbedded/` 与 `Transport/WebSocket/` 两条通道的实现；`Internal/` 下不放 public 类型。
 - `tests/`：`Contract/` 公共面与 Endpoint 契约、`Unit/` 状态机、`Fault/` 故障注入、`Transport/` 远程传输与 loopback WS 夹具。
 - 远程通道走 BCL `ClientWebSocket`，零新增 NuGet；`Socket` / `TcpClient` / `NetworkStream` / `SslStream` / `PipeReader` / `PipeWriter` 由 `eng/BannedSymbols.txt` 在构建期拦住。
-- `Transport/WebSocket/` 下的 `WebSocketClientConnectionFactory` 与 `WebSocketTransportOptions` 虽是 public，落点仍限定在该目录，成因见 `.spec/decisions/0003-a1-client-wss-access-landing-sites.md` 裁决三。
 - 具体第三方 Adapter 必须位于本模块内部边界，不能把其类型暴露给其他模块。

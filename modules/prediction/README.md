@@ -4,11 +4,9 @@
 
 ## 状态
 
-- 阶段：未实现
+- 阶段：Foundation 骨架（`PredictionKey` / 窗口 / 账本 / `RuntimePredictionPlanAdapter`）；不是「确认世界 + 预测世界整体克隆 + 重放」，待 R-00467 重写
 - 优先级：P0
-- 公共契约来源：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
-- 公共契约来源：[`PredictionFrame 与客户端权威更新事务`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#72-predictionframe-与客户端权威更新事务)、[`GAS Framework`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#9-gas-framework)
-- 内部设计：[`LumioClient 模块化架构`](../../docs/specs/2026-08-27-client-module-architecture-design.md)
+- 公共契约来源：架构仓 `LumioGameEngine` 的 `.spec/knowledge/features/gas.md` M7（预测与投影：预测键 = 输入序号、不可预测清单、预测世界重建）与 `.spec/knowledge/features/ecs.md` M10
 
 ## 责任
 

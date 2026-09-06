@@ -4,11 +4,9 @@
 
 ## 状态
 
-- 阶段：未实现
+- 阶段：状态机与准入骨架已落地；现行 wire 只有 `Welcome`，五校（Release / Manifest / Schema / ABI / Capability）的形状待随架构仓 wire 重定
 - 优先级：P0
-- 公共契约来源：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
-- 公共契约来源：[`Replication、Prediction 与网络`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#7-replicationprediction-与网络)、[`Release、版本共存与更新`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#13-release版本共存与更新)
-- 内部设计：[`LumioClient 模块化架构`](../../docs/specs/2026-08-27-client-module-architecture-design.md)
+- 公共契约来源：架构仓 `LumioGameEngine` 的 `engine/wire/hello-wire-v1.json` 与 `.spec/knowledge/features/architecture.md` §3.3
 
 ## 责任
 
@@ -48,7 +46,6 @@ Negotiation Result 必须保留握手所依据的 Manifest/Contract Hash，后�
 
 - 允许依赖：[`connection`](../connection/README.md)、[`observability`](../observability/README.md)。
 - 外部依赖：生成的 Handshake/Manifest/Capability Contract、已发布 Runtime/Core ABI 描述。
-- 可选实现方：[`hybridclr-adapter`](../hybridclr-adapter/README.md) 实现本模块声明的 Capability Provider Port。
 - 禁止依赖：`session` 具体实现、Replica/Prediction、Unity SDK、HybridCLR SDK、Release Catalog 实现。
 
 ## 生命周期与线程模型

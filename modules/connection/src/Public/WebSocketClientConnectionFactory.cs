@@ -7,10 +7,6 @@ namespace Lumio.Client.Connection
     /// 与 <see cref="ClientConnectionFactory"/>(LocalEmbedded)并列:同一个 <see cref="IClientConnection"/>
     /// 上层语义,不同的物理通道;远程结果没有 loopback 端。
     /// </summary>
-    /// <remarks>
-    /// 本类型是 public 却落在 <c>Internal/Transport/WebSocket/</c> 目录下,成因见
-    /// <see cref="WebSocketTransportOptions"/> 的说明:ADR 0003 裁决三把落点限定在该目录。
-    /// </remarks>
     public sealed class WebSocketClientConnectionFactory : IClientConnectionFactory
     {
         private readonly WebSocketTransportOptions _options;

@@ -6,12 +6,6 @@ namespace Lumio.Client.Connection
     /// <summary>
     /// 远程 WS 传输的资源预算。
     /// </summary>
-    /// <remarks>
-    /// 本类型与 <see cref="WebSocketClientConnectionFactory"/> 是 public,却落在
-    /// <c>Internal/Transport/WebSocket/</c> 目录下——这是 ADR 0003 裁决三加 T-00003 边界的直接后果:
-    /// 落点被限定在该目录,而 CC-2 要求交付一个可被组装根消费的 <see cref="IClientConnectionFactory"/> 实现。
-    /// 目录名在此只表达「远程传输适配器的实现区」,不表达可见性。搬迁到 <c>Public/</c> 需另立卡。
-    /// </remarks>
     public readonly struct WebSocketTransportOptions
     {
         /// <summary>与 LumioServer <c>TransportProvisionalDefaults.DefaultMaxMessageBytes</c> 对齐(provisional)。</summary>
