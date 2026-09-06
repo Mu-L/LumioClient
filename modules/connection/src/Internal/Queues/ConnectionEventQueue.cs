@@ -7,6 +7,9 @@ namespace Lumio.Client.Connection
         private readonly ConnectionEvent[] _items;
         private int _head;
         private int _count;
+        // A terminal notification must survive even when the data queue is full.
+        private ConnectionEvent _terminal;
+        private bool _hasTerminal;
 
         public ConnectionEventQueue(int capacity)
         {
@@ -15,19 +18,28 @@ namespace Lumio.Client.Connection
 
         public bool TryEnqueue(in ConnectionEvent evt)
         {
-            if (_count == _items.Length)
+            if (evt.Terminal)
             {
-                return false;
+                if (_hasTerminal) return false;
+                _terminal = evt;
+                _hasTerminal = true;
+                return true;
             }
-
+            if (_hasTerminal || _count == _items.Length) return false;
             _items[(_head + _count) % _items.Length] = evt;
             _count++;
             return true;
         }
 
-        public int Count
+        public int Count => _count + (_hasTerminal ? 1 : 0);
+
+        public void Clear()
         {
-            get { return _count; }
+            Array.Clear(_items, 0, _items.Length);
+            _head = 0;
+            _count = 0;
+            _terminal = default;
+            _hasTerminal = false;
         }
 
         public int Drain(Span<ConnectionEvent> destination)
@@ -35,11 +47,19 @@ namespace Lumio.Client.Connection
             int n = Math.Min(destination.Length, _count);
             for (int i = 0; i < n; i++)
             {
-                destination[i] = _items[(_head + i) % _items.Length];
+                int slot = (_head + i) % _items.Length;
+                destination[i] = _items[slot];
+                _items[slot] = default; // Do not retain drained frame buffers.
             }
-
             _head = (_head + n) % _items.Length;
             _count -= n;
+            // Preserve FIFO on an ordinary close (e.g. Superseded followed by Close).
+            if (_hasTerminal && _count == 0 && n < destination.Length)
+            {
+                destination[n++] = _terminal;
+                _terminal = default;
+                _hasTerminal = false;
+            }
             return n;
         }
     }

@@ -13,48 +13,34 @@ namespace Lumio.Client.Session.Tests.Support;
 internal static class SessionTestBytes
 {
     public static readonly byte[] Hello = { 0xA5, 0x3C, 0x91, 0x07, 0xD2, 0x4E, 0xB8, 0x11 };
-
     public static readonly byte[] Reject = { 0x5A, 0xC3, 0x0E, 0xF4 };
-
     private static readonly NetEntityId Self = new(7UL, 2UL);
-
     public static readonly byte[] Welcome = WireCodec.EncodePack(new WelcomeMessage(7UL, Self, 1UL));
-
-    public static readonly byte[] WorldChange = WireCodec.EncodePack(new WorldChangeMessage(
-        1UL,
-        0UL,
+    public static readonly byte[] WorldChange = WireCodec.EncodePack(new WorldChangeMessage(1UL, 0UL,
         new[]
         {
-            new CreateRecord("world", new NetEntityId(7UL, 1UL), Array.Empty<FieldValue>()),
-            new CreateRecord("player", Self, Array.Empty<FieldValue>()),
-        },
-        Array.Empty<FieldChange>(),
-        Array.Empty<DestroyRecord>(),
-        Array.Empty<ClientRpcRecord>()));
-
+            new CreateRecord("WorldEntity", new NetEntityId(7UL, 1UL), Array.Empty<FieldValue>()),
+            new CreateRecord("PlayerEntity", Self, Array.Empty<FieldValue>()),
+        }, Array.Empty<FieldChange>(), Array.Empty<DestroyRecord>(), Array.Empty<ClientRpcRecord>()));
     public static readonly byte[] Snapshot = WorldChange;
-
     public static readonly byte[] Gap = { 0x91, 0xA9, 0xB0, 0xC3 };
 }
 
 internal sealed class SessionHarness
 {
-    public SessionHarness(bool runtimeCommitted)
-        : this(runtimeCommitted, false)
-    {
-    }
-
+    public SessionHarness(bool runtimeCommitted) : this(runtimeCommitted, false) { }
     public SessionHarness(bool runtimeCommitted, IClientOutboundMessageObserver outboundObserver)
-        : this(runtimeCommitted, false, outboundObserver)
-    {
-    }
-
+        : this(runtimeCommitted, false, outboundObserver) { }
     public SessionHarness(bool runtimeCommitted, bool indeterminate)
-        : this(runtimeCommitted, indeterminate, new NullClientOutboundMessageObserver())
-    {
-    }
+        : this(runtimeCommitted, indeterminate, new NullClientOutboundMessageObserver()) { }
+    public SessionHarness(bool runtimeCommitted, IPlatformCapabilityProvider capabilities)
+        : this(runtimeCommitted, false, new NullClientOutboundMessageObserver(), capabilities) { }
 
-    private SessionHarness(bool runtimeCommitted, bool indeterminate, IClientOutboundMessageObserver outboundObserver)
+    public SessionHarness(bool runtimeCommitted, IClientPresentationSink presentation)
+        : this(runtimeCommitted, false, new NullClientOutboundMessageObserver(), null, presentation) { }
+
+    private SessionHarness(bool runtimeCommitted, bool indeterminate,
+        IClientOutboundMessageObserver outboundObserver, IPlatformCapabilityProvider? capabilities = null, IClientPresentationSink? presentationOverride = null)
     {
         Connections = new CapturingConnectionFactory();
         Scope = new ImmediateGameplayScopeActivator();
@@ -64,91 +50,43 @@ internal sealed class SessionHarness
         Commands = new InputCommandSource(Ingress, new PassThroughMapper());
         var options = new ClientEventPipelineOptions(8, 4, TimeSpan.FromSeconds(1));
         new ClientEventPipelineFactory().Create(in options, new InMemoryClientEventSink(8), out var writer);
-        var deps = new ClientSessionDependencies(
-            Connections,
-            new ClientHandshakeFactory(),
-            new OkCapability(),
-            new HelloClassifier(),
-            Ingress,
-            Commands,
-            IClientPersistenceFactory.CreateMemory().CreateVerifiedSessionArtifactSource(),
-            writer,
-            Runtime,
-            new ClientReplicaFactory(),
-            new ClientPredictionFactory(),
-            Scope,
-            Presentation,
-            new JsonSessionMessageKindMap(),
-            outboundObserver);
+        var deps = new ClientSessionDependencies(Connections, new ClientHandshakeFactory(), capabilities ?? new OkCapability(),
+            new HelloClassifier(), Ingress, Commands, IClientPersistenceFactory.CreateMemory().CreateVerifiedSessionArtifactSource(),
+            writer, Runtime, new ClientReplicaFactory(), new ClientPredictionFactory(), Scope, presentationOverride ?? Presentation,
+            new JsonSessionMessageKindMap(), outboundObserver);
         new ClientSessionFactory().Create(in deps, out var session);
         Session = session;
     }
 
     public CapturingConnectionFactory Connections { get; }
-
     public ImmediateGameplayScopeActivator Scope { get; }
-
     public NullPresentationSink Presentation { get; }
-
     public RecordingRuntime Runtime { get; }
-
     public InputSampleIngress Ingress { get; }
-
     public IInputCommandSource Commands { get; }
-
     public IClientSession Session { get; }
-
-    public void Connect(ulong generation = 1)
-    {
-        Session.RequestConnect(new SessionConnectRequest(generation), CancellationToken.None);
-    }
-
-    public void Tick()
-    {
-        Session.Tick(new ClientOwnerTick(1));
-    }
-
-    public void Deliver(byte[] bytes)
-    {
-        Connections.Loopback.TryDeliverToClient(new EncodedFrame(bytes));
-    }
-
+    public void Connect(ulong generation = 1) => Session.RequestConnect(new SessionConnectRequest(generation), CancellationToken.None);
+    public void Tick() => Session.Tick(new ClientOwnerTick(1));
+    public void Deliver(byte[] bytes) => Connections.Loopback.TryDeliverToClient(new EncodedFrame(bytes));
     public void HappyPathToActive()
     {
-        Connect();
-        Tick();
-        Deliver(SessionTestBytes.Hello);
-        Tick();
-        Deliver(SessionTestBytes.Welcome);
-        Tick();
-        Deliver(SessionTestBytes.WorldChange);
-        Tick();
+        Connect(); Tick();
+        Deliver(SessionTestBytes.Hello); Tick();
+        Deliver(SessionTestBytes.Welcome); Tick();
+        Deliver(SessionTestBytes.WorldChange); Tick();
     }
 
     internal sealed class CapturingConnectionFactory : IClientConnectionFactory
     {
         private readonly Queue<bool> _sendResults = new();
-
         public LocalEmbeddedLoopback Loopback { get; private set; } = default!;
-
         public int CreateCount { get; private set; }
-
         public int StartCount { get; private set; }
-
         public int CloseCount { get; private set; }
-
         public bool DisconnectAfterFrameDrain { get; set; }
-
         public List<byte[]> SendAttempts { get; } = new();
-
         public void QueueSendResults(params bool[] results)
-        {
-            for (int i = 0; i < results.Length; i++)
-            {
-                _sendResults.Enqueue(results[i]);
-            }
-        }
-
+        { foreach (bool result in results) _sendResults.Enqueue(result); }
         public ClientConnectionCreateResult Create(in ClientConnectionCreateRequest request, out IClientConnection connection)
         {
             ClientConnectionCreateResult result = new ClientConnectionFactory().Create(in request, out IClientConnection inner);
@@ -157,71 +95,33 @@ internal sealed class SessionHarness
             connection = new CountingConnection(inner, this);
             return result;
         }
-
         private sealed class CountingConnection : IClientConnection
         {
             private readonly IClientConnection _inner;
             private readonly CapturingConnectionFactory _owner;
-
-            public CountingConnection(IClientConnection inner, CapturingConnectionFactory owner)
-            {
-                _inner = inner;
-                _owner = owner;
-            }
-
+            public CountingConnection(IClientConnection inner, CapturingConnectionFactory owner) { _inner = inner; _owner = owner; }
             public ConnectionGeneration Generation => _inner.Generation;
-
-            public ConnectionCommandResult Start()
-            {
-                _owner.StartCount++;
-                return _inner.Start();
-            }
-
+            public ConnectionCommandResult Start() { _owner.StartCount++; return _inner.Start(); }
             public ConnectionSendResult TrySend(in EncodedFrame frame)
             {
                 _owner.SendAttempts.Add(frame.Bytes.ToArray());
-                if (_owner._sendResults.Count > 0 && !_owner._sendResults.Dequeue())
-                {
-                    return new ConnectionSendResult(false);
-                }
-
+                if (_owner._sendResults.Count > 0 && !_owner._sendResults.Dequeue()) return new ConnectionSendResult(false);
                 return _inner.TrySend(in frame);
             }
-
             public int DrainEvents(Span<ConnectionEvent> destination)
             {
                 int count = _inner.DrainEvents(destination);
                 bool hasFrame = false;
                 for (int i = 0; i < count; i++)
-                {
-                    if (destination[i].Kind == ConnectionEventKind.FrameReceived)
-                    {
-                        hasFrame = true;
-                        break;
-                    }
-                }
-
-                if (!_owner.DisconnectAfterFrameDrain || !hasFrame)
-                {
-                    return count;
-                }
-
+                    if (destination[i].Kind == ConnectionEventKind.FrameReceived) { hasFrame = true; break; }
+                if (!_owner.DisconnectAfterFrameDrain || !hasFrame) return count;
                 _owner.DisconnectAfterFrameDrain = false;
                 _inner.RequestClose(ConnectionCloseReason.Disconnect);
-                if (count < destination.Length)
-                {
-                    count += _inner.DrainEvents(destination.Slice(count));
-                }
-
+                if (count < destination.Length) count += _inner.DrainEvents(destination.Slice(count));
                 return count;
             }
-
             public ConnectionCommandResult RequestClose(ConnectionCloseReason reason)
-            {
-                _owner.CloseCount++;
-                return _inner.RequestClose(reason);
-            }
-
+            { _owner.CloseCount++; return _inner.RequestClose(reason); }
             public ClientConnectionSnapshot GetSnapshot() => _inner.GetSnapshot();
         }
     }
@@ -230,35 +130,20 @@ internal sealed class SessionHarness
     {
         public HandshakeOpaqueFrameRole Classify(ReadOnlyMemory<byte> frame)
         {
-            if (frame.Span.SequenceEqual(SessionTestBytes.Hello))
-            {
-                return HandshakeOpaqueFrameRole.ServerHello;
-            }
-
-            if (frame.Span.SequenceEqual(SessionTestBytes.Reject))
-            {
-                return HandshakeOpaqueFrameRole.HandshakeReject;
-            }
-
+            if (frame.Span.SequenceEqual(SessionTestBytes.Hello)) return HandshakeOpaqueFrameRole.ServerHello;
+            if (frame.Span.SequenceEqual(SessionTestBytes.Reject)) return HandshakeOpaqueFrameRole.HandshakeReject;
             return HandshakeOpaqueFrameRole.Unclassified;
         }
     }
-
     private sealed class OkCapability : IPlatformCapabilityProvider
     {
         public ValueTask<PlatformCapabilityResult> QueryAsync(in PlatformCapabilityQuery query, CancellationToken cancellationToken)
-        {
-            return new ValueTask<PlatformCapabilityResult>(new PlatformCapabilityResult(query.Attempt, query.Generation, true));
-        }
+            => new(new PlatformCapabilityResult(query.Attempt, query.Generation, true));
     }
-
     private sealed class PassThroughMapper : IGameInputMapper
     {
         public bool TryMap(in SequencedInputSample sample, in InputDrainContext context, out GameplayCommandCandidate candidate)
-        {
-            candidate = new GameplayCommandCandidate(sample.Sequence, new byte[] { 0x42 });
-            return true;
-        }
+        { candidate = new GameplayCommandCandidate(sample.Sequence, new byte[] { 0x42 }); return true; }
     }
 }
 
@@ -266,45 +151,22 @@ internal sealed class RecordingRuntime : IClientRuntimePort
 {
     private readonly bool _committed;
     private readonly bool _indeterminate;
-
-    public RecordingRuntime(bool committed)
-        : this(committed, false)
-    {
-    }
-
-    public RecordingRuntime(bool committed, bool indeterminate)
-    {
-        _committed = committed;
-        _indeterminate = indeterminate;
-    }
-
+    public RecordingRuntime(bool committed) : this(committed, false) { }
+    public RecordingRuntime(bool committed, bool indeterminate) { _committed = committed; _indeterminate = indeterminate; }
     public int AuthorityCalls { get; private set; }
-
     public int LocalCalls { get; private set; }
-
     public ValueTask<RuntimeTransactionOutcome> ApplyAuthoritativeTransaction(in RuntimeTransactionRequest request, CancellationToken cancellationToken)
     {
-        _ = request;
         cancellationToken.ThrowIfCancellationRequested();
         AuthorityCalls++;
-        if (_indeterminate)
-        {
-            return new ValueTask<RuntimeTransactionOutcome>(RuntimeTransactionOutcome.IndeterminateOutcome());
-        }
-
-        return new ValueTask<RuntimeTransactionOutcome>(new RuntimeTransactionOutcome(_committed));
+        if (_indeterminate) return new(RuntimeTransactionOutcome.IndeterminateOutcome());
+        // Recording does not replace the real stage application on successful paths.
+        return new(_committed ? request.CommitAuthority() : new RuntimeTransactionOutcome(false));
     }
-
     public ValueTask<RuntimeTransactionOutcome> ApplyLocalPrediction(in RuntimeTransactionRequest request, CancellationToken cancellationToken)
     {
-        _ = request;
         cancellationToken.ThrowIfCancellationRequested();
         LocalCalls++;
-        if (_indeterminate)
-        {
-            return new ValueTask<RuntimeTransactionOutcome>(RuntimeTransactionOutcome.IndeterminateOutcome());
-        }
-
-        return new ValueTask<RuntimeTransactionOutcome>(new RuntimeTransactionOutcome(_committed));
+        return new(_indeterminate ? RuntimeTransactionOutcome.IndeterminateOutcome() : new RuntimeTransactionOutcome(_committed));
     }
 }

@@ -27,78 +27,18 @@ jobs:
         run: |
           node eng/verify-five-file-package.mjs
           node --test eng/verify-five-file-package.test.mjs
-      - name: Validate contract mirror
+      - name: Validate retained historical fixture mirror
         shell: bash
         run: |
           set -euo pipefail
-          # Hard gate: the vendored architecture bytes still match the lock. This is
-          # self-contained by design — no sibling checkout exists on CI, so a check
-          # that reached for one would silently pass and gate nothing.
+          # Existing consumers still read these pinned fixture bytes. Preserve
+          # their integrity until migrated; they are not the current architecture.
           bash eng/verify-contract-mirror.sh
-          # The pin must be a commit sha, not a branch name: branches move.
           grep -qE '^- upstream commit: `[0-9a-f]{40}`$' contract-mirror/MIRROR.md
           test -s contract-mirror/contract-mirror.sha256
-      - name: Validate repository boundary documentation
+      - name: Validate current repository and module documentation
         run: |
-          test -s README.md
-          test -s LICENSE
           test -s .gitattributes
           grep -q '^\*\.md text eol=lf$' .gitattributes
-          test -s docs/architecture/LumioGameEngine_Architecture_v1.4.md
-          grep -q '^## 职责$' README.md
-          grep -q '^## 明确不负责什么$' README.md
-          grep -q '^## Source / Compile-Time Dependencies$' README.md
-          grep -q '^## Headless Test Surface$' README.md
-          grep -q '^# LumioGameEngine V3 (v1.4)' docs/architecture/LumioGameEngine_Architecture_v1.4.md
-          grep -q 'LGE-V1.4-2026-08-27' README.md
-          grep -q 'LGE-V1.4-2026-08-27' docs/architecture/LumioGameEngine_Architecture_v1.4.md
-          grep -q '^## 子模块' README.md
-          grep -q '^## 当前阶段与开发节奏$' README.md
-          test -s docs/architecture/.baseline.sha256
-          sha256sum -c docs/architecture/.baseline.sha256
-      - name: Validate module documentation
-        shell: bash
-        run: |
-          set -euo pipefail
-          design="docs/specs/2026-08-27-client-module-architecture-design.md"
-          test -s "$design"
-          grep -q '^## 7\. 依赖图$' "$design"
-          grep -q '^## 9\. 模块 README 契约$' "$design"
-
-          modules=(
-            session
-            connection
-            handshake
-            replica
-            prediction
-            input
-            persistence
-            observability
-            unity-adapter
-            hybridclr-adapter
-            bot
-            hello
-            web
-          )
-
-          module_count="$(find modules -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
-          test "$module_count" -eq "${#modules[@]}"
-
-          for module in "${modules[@]}"; do
-            readme="modules/$module/README.md"
-            test -s "$readme"
-            grep -q "^# $module$" "$readme"
-            grep -q 'LGE-V1.2-2026-08-27' "$readme"
-            grep -q '^## 状态$' "$readme"
-            grep -q '^## 责任$' "$readme"
-            grep -q '^## 明确不负责什么$' "$readme"
-            grep -q '^## 公共入口与出口$' "$readme"
-            grep -q '^## 数据与控制流$' "$readme"
-            grep -q '^## 依赖$' "$readme"
-            grep -q '^## 生命周期与线程模型$' "$readme"
-            grep -q '^## 失败与恢复$' "$readme"
-            grep -q '^## 可观测性$' "$readme"
-            grep -q '^## 验证$' "$readme"
-            grep -q '^## 目录$' "$readme"
-            grep -Fq "(modules/$module/README.md)" README.md
-          done
+          node eng/verify-client-documentation.mjs
+          node --test eng/verify-client-documentation.test.mjs
