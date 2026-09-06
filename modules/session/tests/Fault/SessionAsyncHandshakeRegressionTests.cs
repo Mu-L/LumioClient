@@ -28,7 +28,7 @@ public sealed class SessionAsyncHandshakeRegressionTests
     [Fact]
     public void ErrorMapsToFaultPriority()
     {
-        Assert.Equal(SessionEventPriority.Fault, new SessionEventArbiter().MapMessage(SessionMessageKind.Error));
+        Assert.Equal(SessionEventPriority.Fault, SessionEventArbiter.MapMessage(SessionMessageKind.Error));
     }
 
     private sealed class DeferredCapability : IPlatformCapabilityProvider

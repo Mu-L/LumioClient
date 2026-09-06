@@ -10,13 +10,12 @@ using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Client.Session
 {
-    internal sealed class ClientSession : IClientSession
+    internal sealed class ClientSession : IClientSession, IDisposable
     {
         private readonly ClientSessionDependencies _dependencies;
         private readonly SessionStateMachine _machine = new SessionStateMachine();
         private readonly SessionGenerationAllocator _generations = new SessionGenerationAllocator();
         private readonly SessionEventInbox _inbox = new SessionEventInbox();
-        private readonly SessionEventArbiter _arbiter = new SessionEventArbiter();
         private readonly SessionResourceLedger _ledger = new SessionResourceLedger();
         private readonly RuntimeHandleLedger _handles = new RuntimeHandleLedger();
         private readonly GameplayScopeActivationGate _scopeGate = new GameplayScopeActivationGate();
@@ -108,7 +107,7 @@ namespace Lumio.Client.Session
                             _drainBuffer[i] = default;
                             if (evt.Generation.Value != _machine.Generation) continue;
                             SessionEventPriority priority = evt.Kind == ConnectionEventKind.FrameReceived
-                                ? _arbiter.MapMessage(_dependencies.Messages.Map(evt.Frame.Bytes)) : _arbiter.MapConnection(evt.Kind);
+                                ? SessionEventArbiter.MapMessage(_dependencies.Messages.Map(evt.Frame.Bytes)) : SessionEventArbiter.MapConnection(evt.Kind);
                             if (!_inbox.Enqueue(priority, evt.Generation.Value, evt))
                             {
                                 FailSession();
@@ -187,6 +186,14 @@ namespace Lumio.Client.Session
                 _terminal.Freeze();
                 return new SessionCommandResult(true);
             }
+        }
+
+        public void Dispose()
+        {
+            // Disposal is the existing non-fault close: it releases every owned
+            // resource (including the authority orchestrator's cancellation
+            // source) through ReleaseAll and is idempotent on a frozen terminal.
+            RequestClose(new SessionCloseRequest(false));
         }
 
         public ClientSessionSnapshot GetSnapshot()
@@ -461,6 +468,10 @@ namespace Lumio.Client.Session
                     try { handshakeDisposable.Dispose(); }
                     catch (Exception) { _machine.TryEnter(ClientSessionState.Faulted); }
                 }
+                // Same for the authority orchestrator: it owns the runtime
+                // cancellation source of a pending commit.
+                try { _authority.Dispose(); }
+                catch (Exception) { _machine.TryEnter(ClientSessionState.Faulted); }
                 _handshakeOrch.Clear();
                 _connection = null!;
                 _replica = null!;
