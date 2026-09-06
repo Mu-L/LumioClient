@@ -24,7 +24,7 @@ public sealed class ProjectGraphTests
     {
         foreach (var assembly in Eleven)
         {
-            var matches = Directory.EnumerateFiles(RepoRoot.Path, assembly + ".csproj", SearchOption.AllDirectories)
+            var matches = RepoFiles.WithFileName(assembly + ".csproj")
                 .Where(p => p.Contains($"{System.IO.Path.DirectorySeparatorChar}src{System.IO.Path.DirectorySeparatorChar}", StringComparison.Ordinal)
                     || p.Contains("/src/", StringComparison.Ordinal))
                 .ToArray();
