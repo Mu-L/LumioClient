@@ -24,8 +24,8 @@ public static class FoundationHostCommand
     public static readonly byte[] WorldChange = WireCodec.EncodePack(new WorldChangeMessage(1UL, 0UL,
         new[]
         {
-            new CreateRecord("WorldEntity", new NetEntityId(7UL, 1UL), Array.Empty<FieldValue>()),
-            new CreateRecord("PlayerEntity", FixtureSelf, Array.Empty<FieldValue>()),
+            new CreateRecord("world", new NetEntityId(7UL, 1UL), Array.Empty<FieldValue>()),
+            new CreateRecord("player", FixtureSelf, Array.Empty<FieldValue>()),
         }, Array.Empty<FieldChange>(), Array.Empty<DestroyRecord>(), Array.Empty<ClientRpcRecord>()));
     public static readonly byte[] Gap = { 0x91, 0xA9, 0xB0, 0xC3 };
 
