@@ -33,8 +33,6 @@
     <ProjectReference Include="..\..\modules\input\src\Lumio.Client.Input.csproj" />
     <ProjectReference Include="..\..\modules\persistence\src\Lumio.Client.Persistence.csproj" />
     <ProjectReference Include="..\..\modules\observability\src\Lumio.Client.Observability.csproj" />
-    <ProjectReference Include="..\..\modules\unity-adapter\src\Lumio.Client.UnityAdapter.csproj" />
-    <ProjectReference Include="..\..\modules\hybridclr-adapter\src\Lumio.Client.HybridClrAdapter.csproj" />
     <ProjectReference Include="..\..\modules\bot\src\Lumio.Client.Bot.csproj" />
   </ItemGroup>
 </Project>

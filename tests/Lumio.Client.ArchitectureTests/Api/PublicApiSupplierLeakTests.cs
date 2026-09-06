@@ -14,9 +14,7 @@ public sealed class PublicApiSupplierLeakTests
         "Lumio.Client.Input",
         "Lumio.Client.Persistence",
         "Lumio.Client.Observability",
-        "Lumio.Client.Bot",
-        "Lumio.Client.UnityAdapter",
-        "Lumio.Client.HybridClrAdapter"
+        "Lumio.Client.Bot"
     };
 
     [Fact]

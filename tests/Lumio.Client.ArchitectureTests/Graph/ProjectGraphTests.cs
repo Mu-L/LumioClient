@@ -53,7 +53,7 @@ public sealed class ProjectGraphTests
     public void ProductionDagIsAcyclic()
     {
         var edges = CsprojGraph.ProductionEdges();
-        var incoming = Eleven.ToDictionary(n => n, _ => 0);
+        var incoming = ProductionModuleAssemblies.ToDictionary(n => n, _ => 0);
         foreach (var (_, tos) in edges)
         {
             foreach (var to in tos)
@@ -65,7 +65,7 @@ public sealed class ProjectGraphTests
             }
         }
 
-        var remaining = new HashSet<string>(Eleven);
+        var remaining = new HashSet<string>(ProductionModuleAssemblies);
         while (remaining.Count > 0)
         {
             var ready = remaining.Where(n => incoming[n] == 0).ToArray();
