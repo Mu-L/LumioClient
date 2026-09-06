@@ -50,10 +50,8 @@ namespace Lumio.Client.Connection
             if (_terminal || !_started) return false;
             if (_events.TryEnqueue(new ConnectionEvent(ConnectionEventKind.FrameReceived, _generation, false, frame)))
                 return true;
-            // A missing authoritative frame invalidates the whole queued batch.
-            // Fail closed; do not continue as if the connection remained synchronized.
-            _events.Clear();
-            TryClose(ConnectionCloseReason.Fault);
+            // Retain validated frames already in queue; emit Disconnect so the session can reconnect.
+            TryClose(ConnectionCloseReason.Disconnect);
             return false;
         }
 
