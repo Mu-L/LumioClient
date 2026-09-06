@@ -22,18 +22,24 @@
 
 ## 公共入口与出口
 
-**入口:** URL query `ws`(server ws 地址)与 `role`(默认 browser);同目录 `contract.json`。
+**入口:** 两种取地址模式,由 URL query `ws` 是否在场决定。
+
+- **平台模式(默认,无 `?ws=`)**:由页面路径 `/games/<slug>/` 推导 slug,同源 `POST /api/games/<slug>/launch`(`credentials: same-origin`),取应答的 `wsUrl` / `subprotocol` / `admissionCredential`;凭证只随握手帧发出,不进 URL、不进 `window.__lumioResult`。应答形状的真值是架构仓 `engine/wire/platform-port-v1.json` 的 `launch`。
+- **考卷本地模式(有 `?ws=`)**:地址取自 query,子协议取自契约,整段流程不调用 launch 端口、不携带凭证——行为与平台模式引入前一致。
+
+两种模式共用的其余入口:URL query `role`(默认 browser);同目录 `contract.json`。
 
 **出口:** `window.__lumioResult = {status: running|ok|error, role, sessionId, baselineRevision, sent:{sequence,payloadSha256,sentAtMs}, received:[{sender,sequence,tickId,revision,payloadSha256,latencyMs}], errors:[{code,detail}]}`;页面上的状态与 Delta 列表渲染。
 
 ## 数据与控制流
 
 1. 读 query 参数;fetch 契约并校验 `contractId` 存在。
-2. `new WebSocket(url, contract.transport.subprotocol)` 连接。
-3. HandshakeAck(accepted) → FullSnapshot → 发 BaselineAck{revision}。
-4. WebCrypto 计算 payload SHA-256(小写 hex)后发一次 InputCommand。
-5. 收 Delta:按契约 required 核对字段、重算 hash、revision 严格递增、latencyMs=Date.now()-originSentAtMs;渲染并记录。
-6. 收 Error → errors 入列、status="error";连接关闭时 status 保持(已收到反向 Delta 则为 "ok")。
+2. 取连接地址:有 `?ws=` 用它;无 `?ws=` 则 `POST /api/games/<slug>/launch`,用应答的 `wsUrl` 覆盖地址、`subprotocol` 覆盖子协议、`admissionCredential` 留待握手。推导不出 slug 停在 waiting;launch 失败记 `launch_failed` 并停止(只试一次)。
+3. `new WebSocket(url, subprotocol)` 连接;握手帧在平台模式下附 `admissionCredential`。
+4. HandshakeAck(accepted) → FullSnapshot → 发 BaselineAck{revision}。
+5. WebCrypto 计算 payload SHA-256(小写 hex)后发一次 InputCommand。
+6. 收 Delta:按契约 required 核对字段、重算 hash、revision 严格递增、latencyMs=Date.now()-originSentAtMs;渲染并记录。
+7. 收 Error → errors 入列、status="error";连接关闭时 status 保持(已收到反向 Delta 则为 "ok")。
 
 ## 依赖
 
@@ -53,6 +59,8 @@
 - 消息缺字段、坏 hash、revision 回退、未知 messageType → errors 记录(取契约 errorCodes 词表内的码)+ status="error"。
 - 服务器 Error → errors 记录(码取自契约 errorCodes 词表) + status="error"。
 - HandshakeAck accepted=false → errors 记录 + status="error";此路径无服务器 Error 消息,页面以本页合成码 handshake_rejected 标注(页面本地状态码,有意不进 wire 词表,不外发)。
+- launch 端口失败(401 / 403 / 404、应答缺 `wsUrl` / `admissionCredential`)→ errors 记录 + status="error",以本页合成码 `launch_failed` 标注(页面本地状态码,与 `handshake_rejected` 同类,有意不进 wire 词表、不外发);只请求一次,不重试风暴。
+- 平台模式下路径推导不出 `<slug>` → 停在 waiting 状态,不连接、不请求 launch。
 - 本里程碑无重试与恢复路径。
 
 ## 可观测性
@@ -63,10 +71,11 @@
 ## 验证
 
 - `node --check modules/web/hello/hello-client.js`(语法级)。
+- `node --test modules/web/hello/hello-client.test.mjs`(两种取地址模式与凭证不外泄)。用 `node:vm` 给每条用例开独立 context 加载真实页面源码,注入 stub 的 `window` / `document` / `fetch` / `WebSocket` 观测其行为——只用 node 内置模块,不引入构建与依赖。
 - `node --test modules/web/chat/chat-window.test.mjs`(Room 聊天呈现)。
-- Hello 行为验证由集成阶段 Playwright 实测(真实 server + 契约文件),本仓不做浏览器自动化测试。
+- 上述用例守的是静态可判行为(调哪个端口、地址与子协议取自哪里、凭证出现在哪);真实浏览器 + 真实 server 的端到端验证仍由集成阶段 Playwright 实测,本仓不做浏览器自动化测试。
 
 ## 目录
 
-- `hello/`:`index.html`、`hello-client.js`、`style.css`。纯静态,任意静态文件服务器可直接托管。
+- `hello/`:`index.html`、`hello-client.js`、`style.css`。纯静态,任意静态文件服务器可直接托管。验证:`node --test modules/web/hello/hello-client.test.mjs`。
 - `chat/`:Room 聊天浏览器呈现（R-00349）。`chat-window.js` 只追加已接受的 `chat.event` 字段，FullSnapshot 清空窗口且不回放历史；不扩展 hello-wire-v1。验证：`node --test modules/web/chat/chat-window.test.mjs`。
