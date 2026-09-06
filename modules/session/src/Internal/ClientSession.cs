@@ -455,6 +455,12 @@ namespace Lumio.Client.Session
                     try { disposable.Dispose(); }
                     catch (Exception) { _machine.TryEnter(ClientSessionState.Faulted); }
                 }
+                // Same for the handshake: it owns a capability cancellation source.
+                if (_handshakeOrch.Handshake is IDisposable handshakeDisposable)
+                {
+                    try { handshakeDisposable.Dispose(); }
+                    catch (Exception) { _machine.TryEnter(ClientSessionState.Faulted); }
+                }
                 _handshakeOrch.Clear();
                 _connection = null!;
                 _replica = null!;
