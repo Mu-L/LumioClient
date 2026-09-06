@@ -10,18 +10,9 @@
     <AssemblyName>Lumio.Client.Bot.Tests</AssemblyName>
   </PropertyGroup>
   <PropertyGroup>
-    <LumioArchRoot Condition="'$(LumioArchRoot)' == ''">$(LUMIO_ARCH_ROOT)</LumioArchRoot>
-    <LumioArchRoot Condition="'$(LumioArchRoot)' == ''">$(LUMIO_ARCHITECTURE_ROOT)</LumioArchRoot>
+    <LumioArchRoot Condition="'$(LumioArchRoot)' == ''">$(LUMIO_ENGINE_ROOT)</LumioArchRoot>
     <LumioEngineSdkCsproj Condition="'$(LumioArchRoot)' != ''">$(LumioArchRoot)/engine/managed/Lumio.Engine.SDK/Lumio.Engine.SDK.csproj</LumioEngineSdkCsproj>
-    <LumioEngineSdkInRepo>$(MSBuildThisFileDirectory)../../../LumioGameEngineArchitecture/engine/managed/Lumio.Engine.SDK/Lumio.Engine.SDK.csproj</LumioEngineSdkInRepo>
-    <LumioEngineSdkSibling>$(MSBuildThisFileDirectory)../../../../LumioGameEngineArchitecture/engine/managed/Lumio.Engine.SDK/Lumio.Engine.SDK.csproj</LumioEngineSdkSibling>
-    <LumioEngineSdkCsproj Condition="'$(LumioEngineSdkCsproj)' == '' AND Exists('$(LumioEngineSdkInRepo)')">$(LumioEngineSdkInRepo)</LumioEngineSdkCsproj>
-    <LumioEngineSdkCsproj Condition="'$(LumioEngineSdkCsproj)' == '' AND Exists('$(LumioEngineSdkSibling)')">$(LumioEngineSdkSibling)</LumioEngineSdkCsproj>
     <LumioNativeLoaderCsproj Condition="'$(LumioArchRoot)' != ''">$(LumioArchRoot)/engine/managed/Lumio.Engine.NativeLoader/Lumio.Engine.NativeLoader.csproj</LumioNativeLoaderCsproj>
-    <LumioNativeLoaderInRepo>$(MSBuildThisFileDirectory)../../../LumioGameEngineArchitecture/engine/managed/Lumio.Engine.NativeLoader/Lumio.Engine.NativeLoader.csproj</LumioNativeLoaderInRepo>
-    <LumioNativeLoaderSibling>$(MSBuildThisFileDirectory)../../../../LumioGameEngineArchitecture/engine/managed/Lumio.Engine.NativeLoader/Lumio.Engine.NativeLoader.csproj</LumioNativeLoaderSibling>
-    <LumioNativeLoaderCsproj Condition="'$(LumioNativeLoaderCsproj)' == '' AND Exists('$(LumioNativeLoaderInRepo)')">$(LumioNativeLoaderInRepo)</LumioNativeLoaderCsproj>
-    <LumioNativeLoaderCsproj Condition="'$(LumioNativeLoaderCsproj)' == '' AND Exists('$(LumioNativeLoaderSibling)')">$(LumioNativeLoaderSibling)</LumioNativeLoaderCsproj>
   </PropertyGroup>
   <PropertyGroup Condition="'$(LumioNativeLoaderCsproj)' != '' AND Exists('$(LumioNativeLoaderCsproj)')">
     <DefineConstants>$(DefineConstants);LUMIO_NATIVE_LOADER</DefineConstants>
