@@ -71,6 +71,25 @@ public sealed class HandshakeAsyncRegressionTests
         Assert.Equal(HandshakePhase.Rejected, handshake.Poll().Phase);
     }
 
+    [Fact]
+    public void DisposeCancelsPendingCapabilityAndIsIdempotent()
+    {
+        var provider = new DeferredCapability();
+        var handshake = Begin(provider, 1);
+        CancellationToken token = provider.Token;
+        Assert.False(token.IsCancellationRequested);
+
+        ((IDisposable)handshake).Dispose();
+        Assert.True(token.IsCancellationRequested);
+
+        // A late completion after Dispose must not resurrect the attempt.
+        provider.Complete(1, true);
+        Assert.False(handshake.Poll().Accepted);
+
+        // Second Dispose is a no-op: the cancellation source is already released.
+        ((IDisposable)handshake).Dispose();
+    }
+
     private static IClientHandshake Begin(DeferredCapability provider, ulong generation)
     {
         IClientHandshake handshake = new ClientHandshakeFactory().Create(provider, HandshakeTestFixtures.Classifier);

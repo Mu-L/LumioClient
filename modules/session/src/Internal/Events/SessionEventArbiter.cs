@@ -4,7 +4,7 @@ namespace Lumio.Client.Session
 {
     internal sealed class SessionEventArbiter
     {
-        public SessionEventPriority MapConnection(ConnectionEventKind kind)
+        public static SessionEventPriority MapConnection(ConnectionEventKind kind)
         {
             switch (kind)
             {
@@ -16,7 +16,7 @@ namespace Lumio.Client.Session
             }
         }
 
-        public SessionEventPriority MapMessage(SessionMessageKind kind)
+        public static SessionEventPriority MapMessage(SessionMessageKind kind)
         {
             if (kind == SessionMessageKind.Error) return SessionEventPriority.Fault;
             if (kind == SessionMessageKind.Gap) return SessionEventPriority.Gap;

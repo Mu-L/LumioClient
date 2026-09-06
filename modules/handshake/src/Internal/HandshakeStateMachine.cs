@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace Lumio.Client.Handshake
 {
-    internal sealed class HandshakeSession : IClientHandshake
+    internal sealed class HandshakeSession : IClientHandshake, IDisposable
     {
         private readonly IPlatformCapabilityProvider _capabilities;
         private readonly GeneratedHandshakeAdapter _adapter;
@@ -121,6 +121,14 @@ namespace Lumio.Client.Handshake
         public HandshakeOutcome GetSnapshot()
         {
             return new HandshakeOutcome(_phase, _reject, _phase == HandshakePhase.Accepted);
+        }
+
+        public void Dispose()
+        {
+            // Releases the capability cancellation source. Idempotent: a second
+            // call finds no pending source. Session state is left as-is; the
+            // owner has already retired this attempt via Cancel or Release.
+            CancelPendingCapability();
         }
 
         private async Task<PlatformCapabilityResult> QueryCapabilityAsync(PlatformCapabilityQuery query, CancellationToken token)

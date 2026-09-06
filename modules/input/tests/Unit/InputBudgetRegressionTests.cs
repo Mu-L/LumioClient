@@ -73,7 +73,7 @@ public sealed class InputBudgetRegressionTests
     {
         for (int i = 0; i < count; i++)
         {
-            ingress.TryEnqueue(new RawInputSample(i + 1, 0, 0));
+            ingress.TryEnqueue(new RawInputSample((uint)(i + 1), 0, 0));
         }
     }
 

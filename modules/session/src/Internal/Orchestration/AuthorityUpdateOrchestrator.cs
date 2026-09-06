@@ -5,7 +5,7 @@ using Lumio.Client.Replica;
 
 namespace Lumio.Client.Session
 {
-    internal sealed class AuthorityUpdateOrchestrator
+    internal sealed class AuthorityUpdateOrchestrator : IDisposable
     {
         private Task<RuntimeTransactionOutcome>? _pending;
         private CancellationTokenSource? _cancellation;
@@ -96,6 +96,14 @@ namespace Lumio.Client.Session
             if (_pending != null) ObserveAbandoned(_pending);
             if (_replica != null) _replica.DiscardStage(_handle, ReplicaStageDiscardReason.SessionReset);
             Clear();
+        }
+
+        public void Dispose()
+        {
+            // Releases the runtime cancellation source of any pending commit.
+            // Idempotent: a second call finds nothing pending and no source.
+            // The orchestrator stays reusable; the next TryCommit allocates anew.
+            CancelPending();
         }
 
         private static void ObserveAbandoned(Task<RuntimeTransactionOutcome> task)

@@ -30,8 +30,7 @@ public sealed class SessionEventArbiterTests
     [Fact]
     public void SupersededBeatsCloseAndDisconnect()
     {
-        var arbiter = new SessionEventArbiter();
-        Assert.True(arbiter.MapMessage(SessionMessageKind.ConnectionSuperseded) < arbiter.MapConnection(ConnectionEventKind.Closed));
-        Assert.True(arbiter.MapMessage(SessionMessageKind.ConnectionSuperseded) < arbiter.MapConnection(ConnectionEventKind.Disconnected));
+        Assert.True(SessionEventArbiter.MapMessage(SessionMessageKind.ConnectionSuperseded) < SessionEventArbiter.MapConnection(ConnectionEventKind.Closed));
+        Assert.True(SessionEventArbiter.MapMessage(SessionMessageKind.ConnectionSuperseded) < SessionEventArbiter.MapConnection(ConnectionEventKind.Disconnected));
     }
 }
