@@ -45,7 +45,7 @@ Client 不拥有 Server 权威状态、Server Wall Clock、Release Pool 或 Voxe
 
 ## 子模块
 
-每个模块的当前责任、明确非责任、依赖方向、失败语义和验证面以其目录内 README 为入口；模块化设计与统一 README 契约见 [`docs/specs/2026-08-27-client-module-architecture-design.md`](docs/specs/2026-08-27-client-module-architecture-design.md)。
+每个模块的当前责任、明确非责任、依赖方向、失败语义和验证面以其目录内 README 为入口。
 
 | 子模块 | 责任 | 优先级 |
 | --- | --- | --- |

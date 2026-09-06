@@ -24,16 +24,9 @@ metadata:
 ## 内部模块文档
 
 - 根 [`README.md`](../../../README.md) 是模块索引；每个 `modules/<name>/README.md` 是对应模块责任、依赖、失败和验证面的入口。
-- 内部模块结构与依赖规则见 [`模块化架构设计`](../../../docs/specs/2026-08-27-client-module-architecture-design.md)，决策依据见 [`ADR 0001`](../../decisions/0001-capability-modules-and-session-orchestration.md)。
+- 内部模块结构与依赖规则的决策依据见 [`ADR 0001`](../../decisions/0001-capability-modules-and-session-orchestration.md)。
 - 模块目录必须先有 README 再引入源码；模块所有权或依赖方向变化时，同一改动同步对应 README。
 
-## 架构源发布物的消费通道
-
-- 架构源的 generated 产物不上任何 NuGet feed；公共消费模型是直接读取 `LumioGameEngine` 的 ABI/wire 定义并在构建时锁定版本，本仓不保存架构镜像。
-- **镜像只读**:`contract-mirror/upstream/` 下任何手改都是缺陷,不是修复。上游有错就在架构源改——本仓不拥有公共 schema / fixture / ids / 生成物。
-- **两条检查不可合并**:`bash eng/verify-contract-mirror.sh` 是硬门禁(只读本仓,已进 CI,篡改退 `33` 并点名);`bash eng/sync-contract-mirror.sh --source <path> --check` 是漂移报告(需要架构源检出,恒退 `0`)。需要兄弟仓路径的检查放进 CI 等于没有门,`--source` 因此是必填参数、不从环境变量取。
-- 对镜像内容断言一律用「存在性 + 身份」(具名 SchemaId 在册、BaselineId 相等),**不硬编码任何计数**——上游 additive 增补是被鼓励的,计数断言必然腐烂。
-- 镜像目录不进 `LumioClient.slnx`、不放 `Directory.Build.*`:产物走源码拷贝,不作为工程引用。
 
 ## Architecture Gate
 

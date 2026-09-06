@@ -17,7 +17,7 @@
 4. 核心能力和 Host/Adapter 之间使用单向依赖。`replica` 与 `prediction` 不直接依赖彼此；二者通过已发布 Runtime 契约形成原子更新边界，并由 `session` 编排。
 5. `observability` 是只提供事件上下文和 Sink 端口的叶子依赖。Unity、HybridCLR、Renderer、平台 UI 和 Bot 类型不得进入稳定核心模块的公共接口。
 6. 首批不建立全局 `common`、`shared`、`utils`、`presentation` 或第二套 `contracts` 模块。共享内容只有在具备独立所有权、生命周期和验证边界后才能升级为模块。
-7. 根 README 只承担仓库边界和模块索引；各模块 README 是模块当前职责、非职责、依赖、失败和验证面的入口。详细依赖图与 README 契约见 [`模块化架构设计`](../../docs/specs/2026-08-27-client-module-architecture-design.md)。
+7. 根 README 只承担仓库边界和模块索引；各模块 README 是模块当前职责、非职责、依赖、失败和验证面的入口。详细依赖图与 README 契约见当时的 `docs/specs/2026-08-27-client-module-architecture-design.md`。
 
 ## 后果
 

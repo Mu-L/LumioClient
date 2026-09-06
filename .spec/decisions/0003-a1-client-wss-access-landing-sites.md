@@ -28,7 +28,7 @@ R-00055「详细要求」第 1 条要求实现 BCL Socket/SslStream/Pipelines Re
 - 决策 2 是**落点裁决,不是永久形态**。消费通道落地后若要把上行构造移进生产库,新增 ADR 取代本条第 2 项,不改写本记录。
 - 决策 3 把远程传输与 LocalEmbedded 放进同一程序集,二者共享 `IClientConnection` 上层语义;代价是 `modules/connection` 的内部文件数增长,收益是零闸门改动、零新增 NuGet、零 allowlist 变更。
 - 三项裁决均不触碰架构源 D-009（RPC/Message dispatch）与 D-011（Auth wire）冻结面,不改 Server 侧所有权。与 LumioServer 双向确认的常量（`productId` / `gameReleaseId` / `protocolVersion` / WS 子协议名与三段位序 / close 1008 语义）**都不是公共契约**,D-011 冻结凭据承载方式后即改用公共形态并删除私有约定。
-- 详细设计、逐条现状回应、阻塞清单与引用纪律在 [`docs/specs/2026-08-28-client-a1-wss-design.md`](../../docs/specs/2026-08-28-client-a1-wss-design.md) 维护;本记录只留决策与理由。
+- 详细设计、逐条现状回应、阻塞清单与引用纪律当时在 `docs/specs/2026-08-28-client-a1-wss-design.md` 维护;本记录只留决策与理由。
 
 ## 修订记录
 

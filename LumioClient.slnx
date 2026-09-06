@@ -31,5 +31,4 @@
   <Project Path="modules/hello/host/Lumio.Client.HelloBot.csproj" />
   <Project Path="tests/Lumio.Client.ArchitectureTests/Lumio.Client.ArchitectureTests.csproj" />
   <Project Path="tests/Lumio.Client.IntegrationTests/Lumio.Client.IntegrationTests.csproj" />
-  <Project Path="eng/upstream-contract-smoke/Lumio.Client.UpstreamContractSmoke.csproj" />
 </Solution>
