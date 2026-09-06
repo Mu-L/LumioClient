@@ -183,6 +183,9 @@ public static class HelloBotCli
                 }
             }
 
+            // 提前写出的成功 result 只是为了解开与集成启动器的循环等待,不是最终判定:
+            // 若在那之后才失败(如 server 下发未知消息、关闭超时),必须用失败 result 覆盖它,
+            // 否则退出码 1 与 result 里的 ok=true 自相矛盾。File.Create 会截断重写。
             if (!ok || !resultWritten)
             {
                 await WriteResultAsync(

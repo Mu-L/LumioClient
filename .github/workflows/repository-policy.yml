@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  readme:
-    name: README policy
+  spec:
+    name: Spec lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,26 +19,3 @@ jobs:
         run: |
           node .spec/tools/spec-lint.mjs
           node --test .spec/tools/spec-lint.test.mjs
-      - name: Validate SDK pin
-        run: |
-          node eng/verify-sdk-pin.mjs
-          node --test eng/verify-sdk-pin.test.mjs
-      - name: Validate five-file package records
-        run: |
-          node eng/verify-five-file-package.mjs
-          node --test eng/verify-five-file-package.test.mjs
-      - name: Validate retained historical fixture mirror
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Existing consumers still read these pinned fixture bytes. Preserve
-          # their integrity until migrated; they are not the current architecture.
-          bash eng/verify-contract-mirror.sh
-          grep -qE '^- upstream commit: `[0-9a-f]{40}`$' contract-mirror/MIRROR.md
-          test -s contract-mirror/contract-mirror.sha256
-      - name: Validate current repository and module documentation
-        run: |
-          test -s .gitattributes
-          grep -q '^\*\.md text eol=lf$' .gitattributes
-          node eng/verify-client-documentation.mjs
-          node --test eng/verify-client-documentation.test.mjs

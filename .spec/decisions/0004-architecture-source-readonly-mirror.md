@@ -36,3 +36,11 @@
 - 硬门禁进的是 `repository-policy.yml` 的 node/shell 作业。该 workflow 至今没有任何 dotnet 步骤,镜像守护因此必须是纯 shell 才能真跑;补 dotnet job 是独立的 R-00287,本决策不代办。
 - 镜像携带的 descriptor 全部是 `baselineId = LGE-V1.4-2026-08-27`,而 `eng/upstream-api-map.md` 仍声明 `architectureBaseline = LGE-V1.2-2026-08-27`、模块 README 也被 `repository-policy.yml` 钉在 `LGE-V1.2-2026-08-27`。该基线落差**先于本镜像存在**,本决策不顺手改:移动全仓声明基线是跨切面裁决,不是 vendor 的副作用。
 - 退场条件:架构源发布出本仓可直接引用的包时,整个 `contract-mirror/` 随之删除。
+
+## 被取代（2026-09-06 · R-00481）
+
+本决策的退场条件已触发,整份决策**不再生效**,只作历史留档。
+
+- 触发事实:公共架构不再由 `LumioGameEngineArchitecture` 以「Baseline + 发布物镜像」的方式提供——该仓已退役,公共真值改为 `LumioGameEngine` 仓的 Living Architecture(`engine/abi/native-abi.json` 与 `engine/wire/*.json`,见其 `.spec/knowledge/features/architecture.md` §3、§6)。Living Architecture §6 明写「旧 Baseline、Schema、Fixture、生成物和镜像不属于当前主线开发入口;迁移前 tag 与 Git 历史是唯一留档」。
+- 落地:`contract-mirror/` 整目录、`eng/sync-contract-mirror.*`、`eng/verify-contract-mirror.*`、`eng/upstream-contract-smoke/`、`eng/upstream-api-map.md`、`tests/Fixtures/` 与 `tests/Lumio.Client.ArchitectureTests/Upstream/` 已随 R-00481 第 ① 层删除;决策 1 ~ 5 全部随之作废。
+- 现行口径:需要契约真值的测试直接读同级 `../LumioGameEngine/engine/wire/*.json`(或 `LUMIO_ENGINE_ROOT`),本仓不再内嵌任何副本、不再维护 sha256 锁与同步脚本。

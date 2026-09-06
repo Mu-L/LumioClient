@@ -4,11 +4,9 @@
 
 ## 状态
 
-- 阶段：未实现
+- 阶段：Foundation 骨架（`ClientSession` + 9 个 Orchestrator：握手 / 首连 / 权威更新 / 本地预测 / Resync / 重连 / 关闭）；权威更新事务目前走 `replicaPlan` 单腿、`reconcile` 丢弃，待 R-00467 重写
 - 优先级：P0
-- 公共契约来源：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
-- 公共契约来源：[`Session、World 与生命周期`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#3-sessionworld-与生命周期)、[`Replication、Prediction 与网络`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#7-replicationprediction-与网络)
-- 内部设计：[`LumioClient 模块化架构`](../../docs/specs/2026-08-27-client-module-architecture-design.md)
+- 公共契约来源：架构仓 `LumioGameEngine` 的 `engine/wire/*.json`（wire 真值）与 `.spec/knowledge/features/ecs.md` M9 / M10（绑定、重连 rebind、预测与对账）
 
 ## 责任
 

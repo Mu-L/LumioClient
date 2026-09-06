@@ -4,11 +4,9 @@
 
 ## 状态
 
-- 阶段：未实现
+- 阶段：已交付：`HeadlessBotHost` + `ClientTimerManager`（消费 NativeCore `tickFrame`，经 SDK NativeLoader）与 Bot 宿主 CLI
 - 优先级：P1
-- 公共契约来源：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
-- 公共契约来源：[`Host Profile、平台与能力`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#10-host-profile平台与能力)、[`工具链、测试与可观测性`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#15-工具链测试与可观测性)
-- 内部设计：[`LumioClient 模块化架构`](../../docs/specs/2026-08-27-client-module-architecture-design.md)
+- 公共契约来源：架构仓 `LumioGameEngine` 的 `.spec/knowledge/features/architecture.md` §3.2（Root 表与 CLR 装载）、§4（开发期构建与最新代码证明）
 
 ## 责任
 
@@ -49,7 +47,7 @@ Scenario 只声明 RequiredCapabilities 和业务步骤；Bot Host 使用与生�
 ## 依赖
 
 - 允许依赖：[`session`](../session/README.md)、[`input`](../input/README.md)、[`observability`](../observability/README.md)。
-- 外部依赖：Game 提供的 Scenario/Assertion Contract、Host Clock 和命令行/测试运行器。`Lumio.Client.Bot.Host` 对架构仓 `Lumio.Engine.SDK` 的引用经 `LUMIO_ARCH_ROOT` / `LUMIO_ENGINE_SDK_PROJECT` 或相对仓根发现；缺失时 Host 仍可编译，不把兄弟仓当成 slnx 测试硬依赖。
+- 外部依赖：Game 提供的 Scenario/Assertion Contract、Host Clock 和命令行/测试运行器。`Lumio.Client.Bot.Host` 对架构仓 `Lumio.Engine.SDK` 的引用经 `LUMIO_ENGINE_SDK_ROOT` / `LUMIO_ENGINE_SDK_PROJECT` 显式指定；缺失时 Host 仍可编译，不把兄弟仓当成 slnx 测试硬依赖。该变量刻意与契约测试用的 `LUMIO_ENGINE_ROOT` 分开——后者只用于读 `engine/wire/*.json`，不应把 SDK 工程拉进构建图。
 - 禁止依赖：Connection/Replica/Prediction 内部实现、Unity/HybridCLR、Server 实现或 Gameplay 源码反向引用。
 - Bot 通过 `session` 公共 API 使用核心能力，不能为测试暴露生产模块内部方法。
 

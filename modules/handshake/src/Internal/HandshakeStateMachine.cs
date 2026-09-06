@@ -7,7 +7,7 @@ namespace Lumio.Client.Handshake
     internal sealed class HandshakeSession : IClientHandshake, IDisposable
     {
         private readonly IPlatformCapabilityProvider _capabilities;
-        private readonly GeneratedHandshakeAdapter _adapter;
+        private readonly IHandshakeFrameClassifier _classifier;
         private HandshakeAttemptId _attempt;
         private ulong _generation;
         private HandshakePhase _phase = HandshakePhase.Idle;
@@ -23,7 +23,7 @@ namespace Lumio.Client.Handshake
         public HandshakeSession(IPlatformCapabilityProvider capabilities, IHandshakeFrameClassifier classifier)
         {
             _capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
-            _adapter = new GeneratedHandshakeAdapter(classifier);
+            _classifier = classifier ?? new UnpublishedHandshakeFrameClassifier();
         }
 
         public HandshakeCommandResult Begin(in HandshakeBeginRequest request)
@@ -51,7 +51,14 @@ namespace Lumio.Client.Handshake
                 return new HandshakeCommandResult(false);
             }
 
-            HandshakeOpaqueFrameRole role = _adapter.Classify(frame);
+            HandshakeOpaqueFrameRole role = frame.IsEmpty
+                ? HandshakeOpaqueFrameRole.Unclassified
+                : _classifier.Classify(frame);
+            if (role == HandshakeOpaqueFrameRole.Unclassified)
+            {
+                return new HandshakeCommandResult(false);
+            }
+
             if (role == HandshakeOpaqueFrameRole.HandshakeReject)
             {
                 _phase = HandshakePhase.Rejected;

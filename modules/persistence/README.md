@@ -4,11 +4,9 @@
 
 ## 状态
 
-- 阶段：未实现
+- 阶段：最小切片已交付：内存 checkpoint 与 verified artifact；当前无生产消费者
 - 优先级：P1
-- 公共契约来源：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
-- 公共契约来源：[`持久化、序列化与配置`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#11-持久化序列化与配置)、[`Release、版本共存与更新`](../../docs/architecture/LumioGameEngine_Architecture_v1.2.md#13-release版本共存与更新)
-- 内部设计：[`LumioClient 模块化架构`](../../docs/specs/2026-08-27-client-module-architecture-design.md)
+- 公共契约来源：架构仓 `LumioGameEngine` 的 `.spec/knowledge/features/architecture.md` §5 / §6
 
 ## 责任
 

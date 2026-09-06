@@ -26,7 +26,7 @@ public sealed class ToolchainPolicyTests
         Assert.Equal("enable", Property(props, "Nullable"));
         Assert.Equal("true", Property(props, "TreatWarningsAsErrors"));
 
-        foreach (var csproj in Directory.EnumerateFiles(RepoRoot.Path, "*.csproj", SearchOption.AllDirectories))
+        foreach (var csproj in RepoFiles.WithExtension(".csproj"))
         {
             var xml = XDocument.Load(csproj);
             var nullable = Property(xml, "Nullable");

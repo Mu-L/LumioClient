@@ -21,3 +21,12 @@
 - 事务 API(D1)、生成 Validator(D2)、Contract Artifact 发布方(D5)依赖上游契约确认;确认前本仓只冻结内部角色约束,不发明公共语义。待确认清单在设计文档「待上游契约确认」一节维护,上游答案与本决策冲突时新增 ADR 取代对应条款。
 - 设计文档与受影响模块 README 随本决策同步;此后改变这些接缝的所有权须新增 ADR,不改写本记录。
 - C# 实现门禁的解除条件:本决策落文档、上游 D1/D2/D5 契约确认、依赖 DAG 映射为 CI 可校验的工程引用图,三者齐备。
+
+## 部分被取代（2026-09-06 · R-00481）
+
+决策 2 里「HybridCLR 路径由 `LumioGame` Release Composition 用 `hybridclr-adapter` 的公开能力实现该端口」
+的具体落点**已不存在**:`hybridclr-adapter` 空壳工程随 R-00481 删除(理由见
+[`0001`](0001-capability-modules-and-session-orchestration.md) 的「部分被取代」段与 LumioGame ADR 0013)。
+
+Gameplay Scope 激活门本身继续有效:`session` 仍声明平台无关的激活端口,预编译 Gameplay Assembly 路径的
+默认实现直接返回已激活;将来真接热更路径时由当时的实现方注入,不新增模块间源码依赖边。

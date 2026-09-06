@@ -2,7 +2,7 @@
 
 用 ADR(Architecture Decision Record)记录决策:为什么这样调度、为什么定这种结构、为什么划这条边界。**本目录是全仓决策记录的唯一落点**——功能内决策与框架级决策都记这里,feature 文档只描述设计现状,不留决策记录。
 
-跨仓公共语义的决策只在 `LumioGameEngineArchitecture` 维护；本目录仅记录 Client 内部实现决策。
+跨仓公共语义的决策只在架构仓 `LumioGameEngine` 维护；本目录仅记录 Client 内部实现决策。
 
 ## 怎么写一条 ADR
 

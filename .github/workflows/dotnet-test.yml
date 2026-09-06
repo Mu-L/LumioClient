@@ -25,7 +25,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: LumioGames/LumioGameRuntime
-          ref: 50da4bb62610de6163171ce010e73b848a2f92bf
           path: .runtime-source
       - uses: actions/setup-dotnet@v4
         with:

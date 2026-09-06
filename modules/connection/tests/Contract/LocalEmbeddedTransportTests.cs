@@ -33,17 +33,19 @@ public sealed class LocalEmbeddedTransportTests
     }
 }
 
-public sealed class GeneratedEnvelopeCodecAdapterFixtureTests
+public sealed class LocalEmbeddedFrameCopyTests
 {
     [Fact]
-    public void ValidInvalidVectors()
+    public void EmptyFramesAreRejected_NonEmptyRoundTrip()
     {
-        var codec = new GeneratedEnvelopeCodecAdapter();
-        Assert.False(codec.TryEncode(default, out _));
-        Assert.True(codec.TryEncode(new EncodedFrame(new byte[] { 4 }), out var bytes));
-        Assert.True(codec.TryDecode(bytes, out var frame));
+        var transport = new LocalEmbeddedTransport(8);
+        Assert.False(transport.TryEncode(default, out _));
+        Assert.True(transport.TryEncode(new EncodedFrame(new byte[] { 4 }), out var bytes));
+        Assert.True(transport.TryDecode(bytes, out var frame));
         Assert.Equal(4, frame.Bytes.Span[0]);
-        Assert.False(codec.TryDecode(ReadOnlyMemory<byte>.Empty, out _));
+        Assert.False(transport.TryDecode(ReadOnlyMemory<byte>.Empty, out _));
+        Assert.Equal(1, transport.EncodeCalls);
+        Assert.Equal(1, transport.DecodeCalls);
     }
 }
 

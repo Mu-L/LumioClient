@@ -6,9 +6,7 @@
 
 - 阶段:Wave 4 交付(浏览器端到端由集成阶段验收)
 - 优先级:P1
-- 公共契约来源：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
 - 公共契约来源:架构仓 `engine/wire/hello-wire-v1.json`(唯一 wire 真值,本模块零副本:字段清单、limits、botTrace 词表全部运行时从契约文件解析)
-- 内部设计:[`LumioClient 模块化架构`](../../docs/specs/2026-08-27-client-module-architecture-design.md)
 
 ## 责任
 

@@ -4,7 +4,7 @@ namespace Lumio.Client.ArchitectureTests.Graph;
 
 public sealed class ProjectGraphTests
 {
-    private static readonly string[] Eleven =
+    private static readonly string[] ProductionModuleAssemblies =
     {
         "Lumio.Client.Session",
         "Lumio.Client.Connection",
@@ -14,17 +14,15 @@ public sealed class ProjectGraphTests
         "Lumio.Client.Input",
         "Lumio.Client.Persistence",
         "Lumio.Client.Observability",
-        "Lumio.Client.UnityAdapter",
-        "Lumio.Client.HybridClrAdapter",
         "Lumio.Client.Bot"
     };
 
     [Fact]
-    public void AllElevenModuleAssembliesExist()
+    public void AllProductionModuleAssembliesExist()
     {
-        foreach (var assembly in Eleven)
+        foreach (var assembly in ProductionModuleAssemblies)
         {
-            var matches = Directory.EnumerateFiles(RepoRoot.Path, assembly + ".csproj", SearchOption.AllDirectories)
+            var matches = RepoFiles.WithFileName(assembly + ".csproj")
                 .Where(p => p.Contains($"{System.IO.Path.DirectorySeparatorChar}src{System.IO.Path.DirectorySeparatorChar}", StringComparison.Ordinal)
                     || p.Contains("/src/", StringComparison.Ordinal))
                 .ToArray();
@@ -55,7 +53,7 @@ public sealed class ProjectGraphTests
     public void ProductionDagIsAcyclic()
     {
         var edges = CsprojGraph.ProductionEdges();
-        var incoming = Eleven.ToDictionary(n => n, _ => 0);
+        var incoming = ProductionModuleAssemblies.ToDictionary(n => n, _ => 0);
         foreach (var (_, tos) in edges)
         {
             foreach (var to in tos)
@@ -67,7 +65,7 @@ public sealed class ProjectGraphTests
             }
         }
 
-        var remaining = new HashSet<string>(Eleven);
+        var remaining = new HashSet<string>(ProductionModuleAssemblies);
         while (remaining.Count > 0)
         {
             var ready = remaining.Where(n => incoming[n] == 0).ToArray();

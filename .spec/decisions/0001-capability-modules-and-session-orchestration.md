@@ -17,7 +17,7 @@
 4. 核心能力和 Host/Adapter 之间使用单向依赖。`replica` 与 `prediction` 不直接依赖彼此；二者通过已发布 Runtime 契约形成原子更新边界，并由 `session` 编排。
 5. `observability` 是只提供事件上下文和 Sink 端口的叶子依赖。Unity、HybridCLR、Renderer、平台 UI 和 Bot 类型不得进入稳定核心模块的公共接口。
 6. 首批不建立全局 `common`、`shared`、`utils`、`presentation` 或第二套 `contracts` 模块。共享内容只有在具备独立所有权、生命周期和验证边界后才能升级为模块。
-7. 根 README 只承担仓库边界和模块索引；各模块 README 是模块当前职责、非职责、依赖、失败和验证面的入口。详细依赖图与 README 契约见 [`模块化架构设计`](../../docs/specs/2026-08-27-client-module-architecture-design.md)。
+7. 根 README 只承担仓库边界和模块索引；各模块 README 是模块当前职责、非职责、依赖、失败和验证面的入口。详细依赖图与 README 契约见当时的 `docs/specs/2026-08-27-client-module-architecture-design.md`。
 
 ## 后果
 
@@ -26,3 +26,14 @@
 - 每个模块可以独立理解和测试，但不承诺独立发布。是否拆分单独的 abstractions 工程由真实的替换或发布需求驱动。
 - 模块文档会增加维护成本，Repository Policy 因此校验登记模块的 README、标题、必要章节和根索引链接。
 - 本决策只涉及 `LumioClient` 内部结构，不改变公共 Schema、Envelope、ABI、错误码、时序或跨仓依赖图。
+
+## 部分被取代（2026-09-06 · R-00481）
+
+决策 2「首批固定 11 个模块」中的 `unity-adapter` 与 `hybridclr-adapter` **已删除**,当前生产模块为 9 个
+(`session`、`connection`、`handshake`、`replica`、`prediction`、`input`、`persistence`、`observability`、`bot`),
+连同 `hello`、`web` 两个切片模块共 11 个目录。
+
+理由:LumioGame ADR 0013 已把 Unity 降为后续候选、首发不接任何游戏引擎;两个适配器工程在删除前是
+0 行源码的空壳(空 csproj + 只含 GlobalUsings 的测试工程),`packages/com.lumio.client/` UPM 骨架同为
+9 个无脚本 asmdef。留空壳等于留一份不会兑现的承诺(Owner 裁决 D31)。将来真接 Unity 时按当时的 Runtime
+形态重开卡,不在空壳上长。本决策的其余部分(能力模块划分、`session` 编排职责)继续有效。
